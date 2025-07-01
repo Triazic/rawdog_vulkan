@@ -11,6 +11,7 @@ fn main() {
   let instance = create_instance(&entry);
   let device = create_device(&instance);
 
+  unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { device.destroy_device(None); }
   unsafe { instance.destroy_instance(None); }
   println!("Finished");
