@@ -10,8 +10,10 @@ fn main() {
   let entry = create_entry();
   let instance = create_instance(&entry);
   let device = create_device(&instance);
+  let buffer = create_buffer(&device);
 
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
+  unsafe { device.destroy_buffer(buffer, None); }
   unsafe { device.destroy_device(None); }
   unsafe { instance.destroy_instance(None); }
   println!("Finished");
@@ -130,6 +132,21 @@ fn create_device(instance: &ash::Instance) -> ash::Device {
   // create device
   let device = unsafe { instance.create_device(*physical_device, &device_create_info, None).expect("Could not create Vulkan device") };
   device
+}
+
+fn create_buffer(device: &ash::Device) -> ash::vk::Buffer {
+  let buffer_size = 1024;
+  let flags = ash::vk::BufferCreateFlags::empty();
+  let usage = ash::vk::BufferUsageFlags::TRANSFER_SRC | ash::vk::BufferUsageFlags::TRANSFER_DST;
+  let sharing_mode = ash::vk::SharingMode::EXCLUSIVE; // used in one queue
+  let buffer_create_info = ash::vk::BufferCreateInfo::default()
+    .flags(flags) 
+    .size(buffer_size)
+    .usage(usage)
+    .sharing_mode(sharing_mode);
+
+  let buffer = unsafe { device.create_buffer(&buffer_create_info, None).expect("Could not create Vulkan buffer") };
+  buffer
 }
 
 
