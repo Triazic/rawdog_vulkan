@@ -45,6 +45,11 @@ fn main() {
   // submit
   let fence = submit(&device, &queue, &command_buffer);
 
+  // await for fence
+  let timeout_ms = 16;
+  let timeout_ns = timeout_ms * 1000 * 1000;
+  unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
+
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { device.destroy_fence(fence, None); }
   unsafe { device.free_command_buffers(command_pool, &[command_buffer]); }
