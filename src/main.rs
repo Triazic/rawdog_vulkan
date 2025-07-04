@@ -230,7 +230,7 @@ fn get_if_memory_type_is_suitable(memory_type: &ash::vk::MemoryType) -> bool {
   return true;
 }
 
-fn get_heap_usage(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice) -> [u64; 16] {
+fn get_heap_usage(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice) -> [u64; ash::vk::MAX_MEMORY_HEAPS] {
   let mut memory_budget_props = ash::vk::PhysicalDeviceMemoryBudgetPropertiesEXT::default();
   memory_budget_props.s_type = ash::vk::StructureType::PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
   
