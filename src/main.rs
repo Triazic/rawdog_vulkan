@@ -9,8 +9,8 @@ use utils::{cstr};
 fn main() {
   let entry = create_entry();
   let instance = create_instance(&entry);
-  let (physical_device, device, memory_type_index) = create_device(&instance);
-
+  let (physical_device, device, memory_type_index, heap_index) = create_device(&instance);
+  dbg!(heap_index);
   let heap_usage_1 = get_heap_usage(&instance, &physical_device);
 
   let buffer_size = (4096.0 * 1.9) as u64;
@@ -81,7 +81,7 @@ fn create_instance(entry: &ash::Entry) -> ash::Instance {
   instance
 }
 
-fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Device, u32) {
+fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Device, u32, u32) {
   // physical device
   let physical_devices = unsafe { instance.enumerate_physical_devices().expect("failed to enumerate physical devices") };
   // assert that there is at least one physical device
@@ -173,6 +173,8 @@ fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Dev
   let memory_type_index = memory_types.iter().position(|memory_type| {
     return get_if_memory_type_is_suitable(memory_type);
   }).expect("failed to find suitable memory type") as u32;
+  let memory_type = memory_types[memory_type_index as usize];
+  let heap_index = memory_type.heap_index;
 
   // device create info
   let device_extensions = [];
@@ -184,7 +186,7 @@ fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Dev
 
   // create device
   let device = unsafe { instance.create_device(physical_device, &device_create_info, None).expect("Could not create Vulkan device") };
-  (physical_device, device, memory_type_index)
+  (physical_device, device, memory_type_index, heap_index)
 }
 
 /// just a handle. not backed with memory
