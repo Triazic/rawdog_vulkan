@@ -39,9 +39,16 @@ fn main() {
   // command buffer
   let command_buffer = create_command_buffer(&device, &command_pool);
 
+  // recording
+  record_command_buffer(&device, &command_buffer, &buffer, buffer_size);
+
+  // submit
+  let fence = submit(&device, &queue, &command_buffer);
+
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
-  unsafe { device.free_command_buffers(command_pool, &[command_buffer]);}
-  unsafe { device.destroy_command_pool(command_pool, None);}
+  unsafe { device.destroy_fence(fence, None); }
+  unsafe { device.free_command_buffers(command_pool, &[command_buffer]); }
+  unsafe { device.destroy_command_pool(command_pool, None); }
   unsafe { device.free_memory(memory_allocation, None); }
   unsafe { device.destroy_buffer(buffer, None); }
   unsafe { device.destroy_device(None); }
@@ -276,6 +283,38 @@ fn create_command_buffer(device: &ash::Device, command_pool: &ash::vk::CommandPo
     .level(ash::vk::CommandBufferLevel::PRIMARY);
   let command_buffers = unsafe { device.allocate_command_buffers(&command_buffer_allocate_info).expect("failed to allocate command buffer") };
   return *command_buffers.get(0).expect("no command buffers created?");
+}
+
+fn record_command_buffer(device: &ash::Device, command_buffer: &ash::vk::CommandBuffer, buffer: &ash::vk::Buffer, buffer_size: u64) -> () {
+  let begin_flags = ash::vk::CommandBufferUsageFlags::default();
+  let begin_create_info = ash::vk::CommandBufferBeginInfo::default()
+    .flags(begin_flags);
+  unsafe { 
+    device
+    .begin_command_buffer(*command_buffer, &begin_create_info)
+    .expect("failed to begin command buffer");
+
+    // round buffer_size to nearest multiple of 4
+    let offset = 0;
+    let data = 3;
+    device.cmd_fill_buffer(*command_buffer, *buffer, offset, ash::vk::WHOLE_SIZE, data); // TODO
+
+    device
+    .end_command_buffer(*command_buffer)
+    .expect("failed to end command buffer");
+  };
+}
+
+fn submit(device: &ash::Device, queue: &ash::vk::Queue, command_buffer: &ash::vk::CommandBuffer) -> ash::vk::Fence {
+  let command_buffers = [*command_buffer];
+  let submit_info = ash::vk::SubmitInfo::default()
+    .command_buffers(&command_buffers);
+
+  let fence = unsafe { device.create_fence(&ash::vk::FenceCreateInfo::default(), None).expect("failed to create fence") };
+
+  unsafe { device.queue_submit(*queue, &[submit_info], fence).expect("failed to submit toqueue"); }
+
+  fence
 }
 
 
