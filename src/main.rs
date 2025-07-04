@@ -3,29 +3,25 @@
 use std::{ffi::CString, str::FromStr};
 pub mod utils;
 pub mod constants;
+pub mod memory;
 use itertools::Itertools;
 use utils::{cstr};
 
 fn main() {
+  // make entry, instance, device
   let entry = create_entry();
   let instance = create_instance(&entry);
-  let (physical_device, device, memory_type_index, heap_index) = create_device(&instance);
-  dbg!(heap_index);
-  let heap_usage_1 = get_heap_usage(&instance, &physical_device);
+  let (physical_device, device) = create_device(&instance);
 
-  let buffer_size = (4096.0 * 1.9) as u64;
+  // get memory_type_index for the buffer
+  let memory_kind = constants::MemoryKind::Buffer1;
+  let memory_flags = &memory::get_memory_flags_from_kind(memory_kind);
+  let memory_type_index = memory::get_memory_type_index(&instance, &physical_device, memory_flags).expect("failed to find suitable memory type");
+
+  // allocate the buffer
+  let buffer_size = (1024) as u64;
   let buffer = create_buffer(&device, buffer_size);
-  {
-    let heap_usage_2 = get_heap_usage(&instance, &physical_device);
-    dbg!(heap_usage_2[1] - heap_usage_1[1]);
-  }
   let memory_allocation = allocate_memory(&device, memory_type_index, buffer_size);
-  {
-    let heap_usage_2 = get_heap_usage(&instance, &physical_device);
-    dbg!(heap_usage_2[1] - heap_usage_1[1]);
-  }
-
-
 
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { device.free_memory(memory_allocation, None); }
@@ -81,7 +77,7 @@ fn create_instance(entry: &ash::Entry) -> ash::Instance {
   instance
 }
 
-fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Device, u32, u32) {
+fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Device) {
   // physical device
   let physical_devices = unsafe { instance.enumerate_physical_devices().expect("failed to enumerate physical devices") };
   // assert that there is at least one physical device
@@ -94,12 +90,7 @@ fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Dev
     if properties.limits.max_memory_allocation_count < 1 { return false; }
 
     // memory flags
-    let memory_properties = unsafe { instance.get_physical_device_memory_properties(*physical_device) };
-    let memory_types = memory_properties.memory_types_as_slice();
-    let has_suitable_memory_type = memory_types.iter().any(|memory_type| {
-      get_if_memory_type_is_suitable(memory_type)
-    });
-    if !has_suitable_memory_type { return false; }
+    if !memory::get_if_physical_device_supports_all_memory_requirements(instance, physical_device) { return false; }
 
     // check vulkan version
     let required_vulkan_version = constants::API_VERSION;
@@ -167,15 +158,6 @@ fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Dev
 
   let queue_create_infos = vec![main_queue];
 
-  // device memory properties
-  let memory_properties = unsafe { instance.get_physical_device_memory_properties(physical_device) };
-  let memory_types = memory_properties.memory_types_as_slice();
-  let memory_type_index = memory_types.iter().position(|memory_type| {
-    return get_if_memory_type_is_suitable(memory_type);
-  }).expect("failed to find suitable memory type") as u32;
-  let memory_type = memory_types[memory_type_index as usize];
-  let heap_index = memory_type.heap_index;
-
   // device create info
   let device_extensions = [];
   let device_features = ash::vk::PhysicalDeviceFeatures::default();
@@ -186,7 +168,7 @@ fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Dev
 
   // create device
   let device = unsafe { instance.create_device(physical_device, &device_create_info, None).expect("Could not create Vulkan device") };
-  (physical_device, device, memory_type_index, heap_index)
+  (physical_device, device)
 }
 
 /// just a handle. not backed with memory
@@ -225,10 +207,7 @@ fn print_memory_commitment(device: &ash::Device, allocation: &ash::vk::DeviceMem
   dbg!(memory_commitment);
 }
 
-fn get_if_memory_type_is_suitable(memory_type: &ash::vk::MemoryType) -> bool {
-  // no constraints yet
-  return true;
-}
+
 
 fn get_heap_usage(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice) -> [u64; ash::vk::MAX_MEMORY_HEAPS] {
   let mut memory_budget_props = ash::vk::PhysicalDeviceMemoryBudgetPropertiesEXT::default();
