@@ -34,3 +34,16 @@ pub fn get_memory_flags_from_kind(kind: MemoryKind) -> Vec<ash::vk::MemoryProper
     MemoryKind::Buffer2 => vec![],
   }
 }
+
+pub fn get_memory_type_from_index(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice, index: u32) -> ash::vk::MemoryType {
+  let memory_properties = unsafe { instance.get_physical_device_memory_properties(*physical_device) };
+  let memory_types = memory_properties.memory_types_as_slice();
+  let memory_type = memory_types.get(index as usize).expect("memory type index out of bounds?");
+  return *memory_type;
+}
+
+pub fn get_memory_type_flags_from_index(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice, index: u32) -> ash::vk::MemoryPropertyFlags {
+  let memory_type = get_memory_type_from_index(instance, physical_device, index);
+  let flags = memory_type.property_flags;
+  return flags;
+}

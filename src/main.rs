@@ -19,9 +19,15 @@ fn main() {
   let memory_type_index = memory::get_memory_type_index(&instance, &physical_device, memory_flags).expect("failed to find suitable memory type");
 
   // allocate the buffer
-  let buffer_size = (1024) as u64;
+  let buffer_size = (901) as u64;
   let buffer = create_buffer(&device, buffer_size);
-  let memory_allocation = allocate_memory(&device, memory_type_index, buffer_size);
+  let requirements = get_buffer_memory_requirements(&device, &buffer);
+  let required_flags = requirements.memory_type_bits;
+  let flags = memory::get_memory_type_flags_from_index(&instance, &physical_device, memory_type_index).as_raw();
+  assert!(required_flags & flags == flags, "required flags are not supported by the memory_type_index");
+  let memory_allocation = allocate_memory(&device, memory_type_index, requirements.size);
+  let offset = 0;
+  bind_buffer_memory(&device, &buffer, &memory_allocation, offset);
 
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { device.free_memory(memory_allocation, None); }
@@ -224,6 +230,18 @@ fn get_heap_usage(instance: &ash::Instance, physical_device: &ash::vk::PhysicalD
 fn print_heap_usage(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice) -> () {
   let heap_usage = get_heap_usage(instance, physical_device);
   dbg!(heap_usage);
+}
+
+fn get_buffer_memory_requirements(device: &ash::Device, buffer: &ash::vk::Buffer) -> ash::vk::MemoryRequirements {
+  let buffer_memory_requirements = unsafe { device.get_buffer_memory_requirements(*buffer) };
+  let size = buffer_memory_requirements.size;
+  let alignment = buffer_memory_requirements.alignment;
+  let bits = buffer_memory_requirements.memory_type_bits;
+  return buffer_memory_requirements;
+}
+
+fn bind_buffer_memory(device: &ash::Device, buffer: &ash::vk::Buffer, memory_allocation: &ash::vk::DeviceMemory, offset: u64) -> () {
+  unsafe { device.bind_buffer_memory(*buffer, *memory_allocation, offset).expect("failed to bind buffer memory") }
 }
 
 
