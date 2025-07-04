@@ -236,9 +236,7 @@ fn get_heap_usage(instance: &ash::Instance, physical_device: &ash::vk::PhysicalD
   let mut memory_props2 = ash::vk::PhysicalDeviceMemoryProperties2::default()
     .push_next(&mut memory_budget_props);
   
-  unsafe {
-      instance.get_physical_device_memory_properties2(*physical_device, &mut memory_props2);
-  }
+  unsafe { instance.get_physical_device_memory_properties2(*physical_device, &mut memory_props2); }
   
   let heap_usage = memory_budget_props.heap_usage;
   return heap_usage;
