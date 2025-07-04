@@ -11,7 +11,8 @@ fn main() {
   // make entry, instance, device
   let entry = create_entry();
   let instance = create_instance(&entry);
-  let (physical_device, device) = create_device(&instance);
+  let (physical_device, device, queue_family_index) = create_device(&instance);
+  let queue_index = 0; // only one queue for now
 
   // get memory_type_index for the buffer
   let memory_kind = constants::MemoryKind::Buffer1;
@@ -28,6 +29,9 @@ fn main() {
   let memory_allocation = allocate_memory(&device, memory_type_index, requirements.size);
   let offset = 0;
   bind_buffer_memory(&device, &buffer, &memory_allocation, offset);
+
+  // queue
+  let queue = get_queue(&device, queue_family_index, queue_index);
 
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { device.free_memory(memory_allocation, None); }
@@ -83,7 +87,7 @@ fn create_instance(entry: &ash::Entry) -> ash::Instance {
   instance
 }
 
-fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Device) {
+fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Device, u32) {
   // physical device
   let physical_devices = unsafe { instance.enumerate_physical_devices().expect("failed to enumerate physical devices") };
   // assert that there is at least one physical device
@@ -174,7 +178,7 @@ fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Dev
 
   // create device
   let device = unsafe { instance.create_device(physical_device, &device_create_info, None).expect("Could not create Vulkan device") };
-  (physical_device, device)
+  (physical_device, device, queue_family_index as u32)
 }
 
 /// just a handle. not backed with memory
@@ -242,6 +246,11 @@ fn get_buffer_memory_requirements(device: &ash::Device, buffer: &ash::vk::Buffer
 
 fn bind_buffer_memory(device: &ash::Device, buffer: &ash::vk::Buffer, memory_allocation: &ash::vk::DeviceMemory, offset: u64) -> () {
   unsafe { device.bind_buffer_memory(*buffer, *memory_allocation, offset).expect("failed to bind buffer memory") }
+}
+
+fn get_queue(device: &ash::Device, queue_family_index: u32, queue_index: u32) -> ash::vk::Queue { 
+  let queue = unsafe { device.get_device_queue(queue_family_index, queue_index) };
+  return queue;
 }
 
 
