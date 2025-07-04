@@ -33,7 +33,15 @@ fn main() {
   // queue
   let queue = get_queue(&device, queue_family_index, queue_index);
 
+  // command pool
+  let command_pool = create_command_pool(&device, queue_family_index);
+
+  // command buffer
+  let command_buffer = create_command_buffer(&device, &command_pool);
+
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
+  unsafe { device.free_command_buffers(command_pool, &[command_buffer]);}
+  unsafe { device.destroy_command_pool(command_pool, None);}
   unsafe { device.free_memory(memory_allocation, None); }
   unsafe { device.destroy_buffer(buffer, None); }
   unsafe { device.destroy_device(None); }
@@ -217,8 +225,6 @@ fn print_memory_commitment(device: &ash::Device, allocation: &ash::vk::DeviceMem
   dbg!(memory_commitment);
 }
 
-
-
 fn get_heap_usage(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice) -> [u64; ash::vk::MAX_MEMORY_HEAPS] {
   let mut memory_budget_props = ash::vk::PhysicalDeviceMemoryBudgetPropertiesEXT::default();
   
@@ -251,6 +257,25 @@ fn bind_buffer_memory(device: &ash::Device, buffer: &ash::vk::Buffer, memory_all
 fn get_queue(device: &ash::Device, queue_family_index: u32, queue_index: u32) -> ash::vk::Queue { 
   let queue = unsafe { device.get_device_queue(queue_family_index, queue_index) };
   return queue;
+}
+
+fn create_command_pool(device: &ash::Device, queue_family_index: u32) -> ash::vk::CommandPool {
+  let flags = ash::vk::CommandPoolCreateFlags::empty();
+  let create_info = ash::vk::CommandPoolCreateInfo::default()
+    .flags(flags)
+    .queue_family_index(queue_family_index)
+    .flags(flags);
+  let command_pool = unsafe { device.create_command_pool(&create_info, None).expect("failed to create command pool") };
+  return command_pool;
+}
+
+fn create_command_buffer(device: &ash::Device, command_pool: &ash::vk::CommandPool) -> ash::vk::CommandBuffer {
+  let command_buffer_allocate_info = ash::vk::CommandBufferAllocateInfo::default()
+    .command_buffer_count(1)
+    .command_pool(*command_pool)
+    .level(ash::vk::CommandBufferLevel::PRIMARY);
+  let command_buffers = unsafe { device.allocate_command_buffers(&command_buffer_allocate_info).expect("failed to allocate command buffer") };
+  return *command_buffers.get(0).expect("no command buffers created?");
 }
 
 
