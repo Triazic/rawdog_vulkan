@@ -232,11 +232,9 @@ fn get_if_memory_type_is_suitable(memory_type: &ash::vk::MemoryType) -> bool {
 
 fn get_heap_usage(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice) -> [u64; ash::vk::MAX_MEMORY_HEAPS] {
   let mut memory_budget_props = ash::vk::PhysicalDeviceMemoryBudgetPropertiesEXT::default();
-  memory_budget_props.s_type = ash::vk::StructureType::PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
   
-  let mut memory_props2 = ash::vk::PhysicalDeviceMemoryProperties2::default();
-  memory_props2.s_type = ash::vk::StructureType::PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
-  memory_props2.p_next = &mut memory_budget_props as *mut _ as *mut std::ffi::c_void;
+  let mut memory_props2 = ash::vk::PhysicalDeviceMemoryProperties2::default()
+    .push_next(&mut memory_budget_props);
   
   unsafe {
       instance.get_physical_device_memory_properties2(*physical_device, &mut memory_props2);
