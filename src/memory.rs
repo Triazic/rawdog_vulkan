@@ -1,7 +1,4 @@
-use std::arch::breakpoint;
-
 use strum::IntoEnumIterator;
-
 use crate::constants::{self, MemoryKind};
 
 pub fn get_memory_type_index(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice, required_flags: &[ash::vk::MemoryPropertyFlags]) -> Option<u32> {
