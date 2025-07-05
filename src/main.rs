@@ -26,7 +26,6 @@ fn main() {
   let requirements = get_buffer_memory_requirements(&device, &buffer);
   let required_flags = requirements.memory_type_bits;
   let flags = memory_kind_flags | required_flags;
-  memory::hoo_ha(flags);
   let memory_type_index = memory::get_memory_type_index_raw(&instance, &physical_device, flags).expect("no suitable memory type index found");
   assert!(required_flags & flags == flags, "required flags are not supported by the memory_type_index");
   let memory_allocation = allocate_memory(&device, memory_type_index, requirements.size);
