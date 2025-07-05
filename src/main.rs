@@ -316,7 +316,7 @@ fn submit(device: &ash::Device, queue: &ash::vk::Queue, command_buffer: &ash::vk
 
   let fence = unsafe { device.create_fence(&ash::vk::FenceCreateInfo::default(), None).expect("failed to create fence") };
 
-  unsafe { device.queue_submit(*queue, &[submit_info], fence).expect("failed to submit toqueue"); }
+  unsafe { device.queue_submit(*queue, &[submit_info], fence).expect("failed to submit to queue"); }
 
   fence
 }

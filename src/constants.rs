@@ -12,5 +12,5 @@ pub const ALL_MEMORY_PROPERTY_FLAGS: [ash::vk::MemoryPropertyFlags; 1] = [ash::v
 
 #[derive(Debug, strum_macros::EnumIter)]
 pub enum MemoryKind {
-    Buffer1,
+  Buffer1,
 }
