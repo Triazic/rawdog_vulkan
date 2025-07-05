@@ -16,6 +16,9 @@ fn split_bits(n: u32) -> Vec<u32> {
   let mut v = vec![0, 32];
   v[0] = 7;
   for i in 0..32 {
+    let z = i + 1;
+    let z_as_string = z.to_string();
+    dbg!(z);
     let x = 4;
     let y = 7;
   }
