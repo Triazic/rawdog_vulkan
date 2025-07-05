@@ -1,7 +1,10 @@
+use std::u32;
+
 use itertools::Itertools;
 use strum::IntoEnumIterator;
-use crate::constants::{self, MemoryKind};
+use crate::{constants::{self, MemoryKind}, utils::split_bits};
 
+/// I should deprecate this.. hmm
 pub fn get_memory_type_index(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice, required_flags: &[ash::vk::MemoryPropertyFlags]) -> Option<u32> {
   let memory_properties = unsafe { instance.get_physical_device_memory_properties(*physical_device) };
   let memory_types = memory_properties.memory_types_as_slice();
@@ -12,21 +15,7 @@ pub fn get_memory_type_index(instance: &ash::Instance, physical_device: &ash::vk
   return memory_type_index.map(|v| v as u32);
 }
 
-fn split_bits(n: u32) -> Vec<u32> {
-  (0..32).rev()
-    .map(|i| {
-      let mask = 1 << i;
-      let matches = n & mask == mask;
-      if matches {
-          1
-      } else {
-          0
-      }
-    })
-    .collect()
-}
-
-fn split_flags(flags: ash::vk::MemoryPropertyFlags) -> Vec<ash::vk::MemoryPropertyFlags> {
+pub fn split_flags(flags: ash::vk::MemoryPropertyFlags) -> Vec<ash::vk::MemoryPropertyFlags> {
   let bits = split_bits(flags.as_raw());
   let values = bits.iter()
     .enumerate().map(|(i, b)| if *b == 1 { 2u32.pow((32 - i - 1) as u32) } else { 0 })
@@ -34,6 +23,16 @@ fn split_flags(flags: ash::vk::MemoryPropertyFlags) -> Vec<ash::vk::MemoryProper
     .collect_vec();
   let flags = values.iter().map(|v| ash::vk::MemoryPropertyFlags::from_raw(*v)).collect_vec();
   flags
+}
+
+pub fn split_flags_u32(flags: u32) -> Vec<ash::vk::MemoryPropertyFlags> {
+  let flags = ash::vk::MemoryPropertyFlags::from_raw(flags);
+  split_flags(flags)
+}
+
+pub fn print_flags(flags: ash::vk::MemoryPropertyFlags) {
+  let flags = split_flags(flags);
+  dbg!(flags);
 }
 
 #[test]
@@ -61,17 +60,29 @@ fn test_split_flags() {
   assert!(res.contains(&ash::vk::MemoryPropertyFlags::HOST_VISIBLE));
 }
 
-pub fn get_memory_type_index_raw(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice, required_flags: u32) -> Option<u32> {
+pub fn get_memory_type_index_raw(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice, required_flags: u32, memory_type_bits: u32) -> Option<u32> {
+  // the actual memory type we can use is an intersection of the indexes found in memory_type_bits, which also pass flag requirements
+  let memory_type_bits_split = split_bits(memory_type_bits);
+  let memory_type_bits_reversed = memory_type_bits_split.iter().rev().collect_vec();
+  let allowed_memory_type_indexes = 
+    memory_type_bits_reversed.iter().enumerate()
+    .map(|(i, b)| {
+      if **b == 1 { Some(i as u32) } else { None }
+    })
+    .filter_map(|x| x)
+    .collect_vec();
+
   let memory_properties = unsafe { instance.get_physical_device_memory_properties(*physical_device) };
-  let memory_types = memory_properties.memory_types_as_slice();
+  let all_memory_types = memory_properties.memory_types_as_slice();
   let required_flags = ash::vk::MemoryPropertyFlags::from_raw(required_flags);
-  // let split = split_bits(required_flags.as_raw());
-  // let x = 4;
-  let memory_type_index = memory_types.iter().position(|memory_type| {
+
+  for allowed_index in allowed_memory_type_indexes.iter() {
+    let memory_type = all_memory_types.get(*allowed_index as usize).expect("memory type index out of bounds?");
     let flags = memory_type.property_flags;
-    required_flags & flags == required_flags
-  });
-  return memory_type_index.map(|v| v as u32);
+    let satisfies_flags = flags & required_flags == required_flags;
+    if satisfies_flags { return Some(*allowed_index); }
+  }
+  return None;
 }
 
 pub fn get_heap_index(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice, index: u32) -> u32 {
