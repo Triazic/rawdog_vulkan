@@ -30,8 +30,7 @@ pub fn get_if_physical_device_supports_all_memory_requirements(instance: &ash::I
 
 pub fn get_memory_flags_from_kind(kind: MemoryKind) -> Vec<ash::vk::MemoryPropertyFlags> {
   match kind {
-    MemoryKind::Buffer1 => vec![],
-    MemoryKind::Buffer2 => vec![],
+    MemoryKind::Buffer1 => vec![ash::vk::MemoryPropertyFlags::HOST_VISIBLE],
   }
 }
 
