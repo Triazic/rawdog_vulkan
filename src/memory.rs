@@ -63,11 +63,11 @@ fn test_split_flags() {
 pub fn get_memory_type_index_raw(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice, required_flags: u32, memory_type_bits: u32) -> Option<u32> {
   // the actual memory type we can use is an intersection of the indexes found in memory_type_bits, which also pass flag requirements
   let memory_type_bits_split = split_bits(memory_type_bits);
-  let memory_type_bits_reversed = memory_type_bits_split.iter().rev().collect_vec();
+  let memory_type_bits_reversed = memory_type_bits_split.iter().rev(); // starts at least significant bit
   let allowed_memory_type_indexes = 
-    memory_type_bits_reversed.iter().enumerate()
+    memory_type_bits_reversed.enumerate()
     .map(|(i, b)| {
-      if **b == 1 { Some(i as u32) } else { None }
+      if *b == 1 { Some(i as u32) } else { None }
     })
     .filter_map(|x| x)
     .collect_vec();
@@ -90,6 +90,17 @@ pub fn get_heap_index(instance: &ash::Instance, physical_device: &ash::vk::Physi
   let memory_type = memory_properties.memory_types_as_slice().get(index as usize).expect("memory type index out of bounds?");
   let heap_index = memory_type.heap_index;
   heap_index
+}
+
+pub fn print_memory_flags(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice) -> () {
+  let memory_properties = unsafe { instance.get_physical_device_memory_properties(*physical_device) };
+  let memory_types = memory_properties.memory_types_as_slice();
+  for (i, memory_type) in memory_types.iter().enumerate() {
+    let flags = memory_type.property_flags;
+    let heap_index = memory_type.heap_index;
+    println!("memory type flags for memory type {} heap index {}:", i, heap_index);
+    print_flags(flags);
+  }
 }
 
 pub fn get_if_physical_device_supports_all_memory_requirements(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice) -> bool {

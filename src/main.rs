@@ -26,7 +26,9 @@ fn main() {
   let buffer = create_buffer(&device, buffer_size);
   let requirements = get_buffer_memory_requirements(&device, &buffer);
   let memory_type_bits = requirements.memory_type_bits;
-  let memory_type_index = memory::get_memory_type_index_raw(&instance, &physical_device, memory_kind_flags, memory_type_bits).expect("no suitable memory type index found");
+  let memory_type_index = 
+    memory::get_memory_type_index_raw(&instance, &physical_device, memory_kind_flags, memory_type_bits)
+    .expect("no suitable memory type index found");
   let memory_allocation = allocate_memory(&device, memory_type_index, requirements.size);
   let offset = 0;
   bind_buffer_memory(&device, &buffer, &memory_allocation, offset);
