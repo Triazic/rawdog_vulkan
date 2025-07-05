@@ -299,7 +299,6 @@ fn record_command_buffer(device: &ash::Device, command_buffer: &ash::vk::Command
     .begin_command_buffer(*command_buffer, &begin_create_info)
     .expect("failed to begin command buffer");
 
-    // round buffer_size to nearest multiple of 4
     let offset = 0;
     let data = 3;
     device.cmd_fill_buffer(*command_buffer, *buffer, offset, ash::vk::WHOLE_SIZE, data); // TODO
