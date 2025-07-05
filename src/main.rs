@@ -4,6 +4,8 @@ use std::{ffi::CString, str::FromStr};
 pub mod utils;
 pub mod constants;
 pub mod memory;
+extern crate itertools;
+extern crate strum;
 use itertools::Itertools;
 use utils::{cstr};
 
@@ -175,8 +177,8 @@ fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Dev
   let queue_family_index = queue_family_properties.iter().position(|&properties| {
     if properties.queue_count < 1 { return false; }
     let req_flags = [ash::vk::QueueFlags::GRAPHICS, ash::vk::QueueFlags::COMPUTE, ash::vk::QueueFlags::TRANSFER];
-    for req_flag in req_flags.into_iter() {
-      if !properties.queue_flags.contains(req_flag) { return false; }
+    for req_flag in req_flags.iter() {
+      if !properties.queue_flags.contains(*req_flag) { return false; }
     }
     true // queue family is adequate
   }).expect("no queue family satisifies the requirements of this application");
