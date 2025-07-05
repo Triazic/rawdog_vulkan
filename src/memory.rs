@@ -13,16 +13,17 @@ pub fn get_memory_type_index(instance: &ash::Instance, physical_device: &ash::vk
 }
 
 fn split_bits(n: u32) -> Vec<u32> {
-  let mut v = vec![0; 32];
-  for _i in 1..=32 {
-    let i = 32 - _i;
-    let mask = (2 as u32).pow(i);
-    let matches = n & mask == mask;
-    if matches {
-      v[(_i-1) as usize] = 1;
-    }
-  }
-  v
+  (0..32).rev()
+    .map(|i| {
+      let mask = 1 << i;
+      let matches = n & mask == mask;
+      if matches {
+          1
+      } else {
+          0
+      }
+    })
+    .collect()
 }
 
 fn split_flags(flags: ash::vk::MemoryPropertyFlags) -> Vec<ash::vk::MemoryPropertyFlags> {
