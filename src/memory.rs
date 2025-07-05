@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use strum::IntoEnumIterator;
 use crate::constants::{self, MemoryKind};
 
@@ -14,9 +15,6 @@ pub fn get_memory_type_index(instance: &ash::Instance, physical_device: &ash::vk
 fn split_bits(n: u32) -> Vec<u32> {
   let mut v = vec![0; 32];
   for _i in 1..=32 {
-    if _i == 31 {
-      dbg!("break");
-    }
     let i = 32 - _i;
     let mask = (2 as u32).pow(i);
     let matches = n & mask == mask;
@@ -27,7 +25,16 @@ fn split_bits(n: u32) -> Vec<u32> {
   v
 }
 
-// test for split_bits
+fn split_flags(flags: ash::vk::MemoryPropertyFlags) -> Vec<ash::vk::MemoryPropertyFlags> {
+  let bits = split_bits(flags.as_raw());
+  let values = bits.iter()
+    .enumerate().map(|(i, b)| if *b == 1 { 2u32.pow((32 - i - 1) as u32) } else { 0 })
+    .filter(|v| *v != 0)
+    .collect_vec();
+  let flags = values.iter().map(|v| ash::vk::MemoryPropertyFlags::from_raw(*v)).collect_vec();
+  flags
+}
+
 #[test]
 fn test_split_bits() {
   let n = 0b10101010;
@@ -42,6 +49,15 @@ fn test_split_bits() {
   expected[25] = 0;
   expected[24] = 1;
   assert_eq!(res, expected);
+}
+
+#[test]
+fn test_split_flags() {
+  let flags = ash::vk::MemoryPropertyFlags::DEVICE_LOCAL | ash::vk::MemoryPropertyFlags::HOST_VISIBLE;
+  let res = split_flags(flags);
+  assert!(res.len() == 2);
+  assert!(res.contains(&ash::vk::MemoryPropertyFlags::DEVICE_LOCAL));
+  assert!(res.contains(&ash::vk::MemoryPropertyFlags::HOST_VISIBLE));
 }
 
 pub fn get_memory_type_index_raw(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice, required_flags: u32) -> Option<u32> {
