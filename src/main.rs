@@ -16,15 +16,16 @@ fn main() {
 
   // get memory_type_index for the buffer
   let memory_kind = constants::MemoryKind::Buffer1;
-  let memory_flags = &memory::get_memory_flags_from_kind(memory_kind);
-  let memory_type_index = memory::get_memory_type_index(&instance, &physical_device, memory_flags).expect("failed to find suitable memory type");
+  let memory_kind_flags = memory::get_memory_flags_raw(&memory::get_memory_flags_from_kind(memory_kind));
 
   // allocate the buffer
   let buffer_size = (901) as u64;
   let buffer = create_buffer(&device, buffer_size);
   let requirements = get_buffer_memory_requirements(&device, &buffer);
   let required_flags = requirements.memory_type_bits;
-  let flags = memory::get_memory_type_flags_from_index(&instance, &physical_device, memory_type_index).as_raw();
+  let flags = memory_kind_flags | required_flags;
+  memory::hoo_ha(flags);
+  let memory_type_index = memory::get_memory_type_index_raw(&instance, &physical_device, flags).expect("no suitable memory type index found");
   assert!(required_flags & flags == flags, "required flags are not supported by the memory_type_index");
   let memory_allocation = allocate_memory(&device, memory_type_index, requirements.size);
   let offset = 0;
