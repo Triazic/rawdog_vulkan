@@ -8,7 +8,7 @@ extern crate itertools;
 extern crate strum;
 use itertools::Itertools;
 use utils::{cstr};
-use crate::memory::{print_flags, split_flags, split_flags_u32};
+use crate::{memory::{print_flags, split_flags, split_flags_u32}, utils::print_endianness};
 
 fn main() {
   // make entry, instance, device
@@ -33,6 +33,9 @@ fn main() {
   let offset = 0;
   bind_buffer_memory(&device, &buffer, &memory_allocation, offset);
 
+  // map the memory so the CPU can consume it
+  let mapped_memory = map_memory(&device, &memory_allocation);
+
   // queue
   let queue = get_queue(&device, queue_family_index, queue_index);
 
@@ -52,6 +55,9 @@ fn main() {
   let timeout_ms = 16;
   let timeout_ns = timeout_ms * 1000 * 1000;
   unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
+
+  let buffer_values = read_buffer_to_cpu(mapped_memory, buffer_size);
+  dbg!(&buffer_values, &buffer_values.len());
 
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { device.destroy_fence(fence, None); }
@@ -303,8 +309,8 @@ fn record_command_buffer(device: &ash::Device, command_buffer: &ash::vk::Command
     .expect("failed to begin command buffer");
 
     let offset = 0;
-    let data = 3;
-    device.cmd_fill_buffer(*command_buffer, *buffer, offset, ash::vk::WHOLE_SIZE, data); // TODO
+    let data = 257;
+    device.cmd_fill_buffer(*command_buffer, *buffer, offset, ash::vk::WHOLE_SIZE, data);
 
     device
     .end_command_buffer(*command_buffer)
@@ -322,6 +328,50 @@ fn submit(device: &ash::Device, queue: &ash::vk::Queue, command_buffer: &ash::vk
   unsafe { device.queue_submit(*queue, &[submit_info], fence).expect("failed to submit to queue"); }
 
   fence
+}
+
+fn map_memory(device: &ash::Device, memory_allocation: &ash::vk::DeviceMemory) -> *mut std::ffi::c_void {
+  let flags = ash::vk::MemoryMapFlags::default();
+  let pointer = unsafe { device.map_memory(*memory_allocation, 0, ash::vk::WHOLE_SIZE, flags).expect("failed to map memory") };
+  pointer
+}
+
+fn print_buffer(mapped_memory: *mut std::ffi::c_void, buffer_size: u64) -> () {
+  print_endianness();
+  unsafe {
+    // Cast the void pointer to a u8 pointer
+    let byte_ptr = mapped_memory as *mut u8;
+
+    // Create a slice from the raw pointer
+    let slice = std::slice::from_raw_parts(byte_ptr, buffer_size as usize);
+
+    // Now you can use the slice safely
+    dbg!(&slice[0..4], slice.len());
+  }
+}
+
+fn read_buffer_to_cpu(mapped_memory: *mut std::ffi::c_void, buffer_size: u64) -> Vec<u32> {
+  unsafe {
+    // Cast the void pointer to a u8 pointer
+    let byte_ptr = mapped_memory as *mut u8;
+
+    // Create a slice from the raw pointer
+    let slice = std::slice::from_raw_parts(byte_ptr, buffer_size as usize);
+
+    let mut acc = Vec::new();
+    let mut working_value = 0;
+    for i in 0..slice.len() {
+      let imod4 = (i % 4) as u32;
+      let component = slice[i] as u32;
+      let value = component * 2u32.pow(imod4);
+      working_value += value;
+      if imod4 == 3 {
+        acc.push(working_value);
+        working_value = 0;
+      }
+    }
+    acc
+  }
 }
 
 

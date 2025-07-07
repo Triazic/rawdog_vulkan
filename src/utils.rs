@@ -17,3 +17,19 @@ pub fn split_bits(n: u32) -> Vec<u32> {
     })
     .collect()
 }
+
+/// On a little-endian system (like x86), the least significant byte comes first.
+/// u32::MAX_VALUE - 1 would be 254, 255, 255, 255 in little-endian.
+pub fn print_endianness() {
+  let n: u32 = 0x01020304;
+  let bytes = n.to_ne_bytes(); // native endian bytes
+
+  match bytes {
+      [0x01, 0x02, 0x03, 0x04] => println!("Big-endian"),
+      [0x04, 0x03, 0x02, 0x01] => println!("Little-endian"),
+      _ => println!("Unknown endianness"),
+  }
+
+  // Optionally: print raw bytes
+  println!("Native endian bytes: {:02x?}", bytes);
+}
