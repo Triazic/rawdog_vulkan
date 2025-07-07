@@ -117,6 +117,9 @@ pub fn get_memory_flags_from_kind(kind: MemoryKind) -> Vec<ash::vk::MemoryProper
     MemoryKind::Buffer1 => vec![
       ash::vk::MemoryPropertyFlags::HOST_VISIBLE,
     ],
+    MemoryKind::Image1 => vec![
+      ash::vk::MemoryPropertyFlags::HOST_VISIBLE,
+    ],
   }
 }
 

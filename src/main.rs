@@ -18,23 +18,27 @@ fn main() {
   let queue_index = 0; // only one queue for now
 
   // get memory_type_index for the buffer
-  let memory_kind = constants::MemoryKind::Buffer1;
+  let memory_kind = constants::MemoryKind::Image1;
   let memory_kind_flags = memory::get_memory_flags_raw(&memory::get_memory_flags_from_kind(memory_kind));
 
   // allocate the buffer
-  let buffer_size = (901) as u64;
-  let buffer = create_buffer(&device, buffer_size);
-  let requirements = get_buffer_memory_requirements(&device, &buffer);
+  let (image, extent, image_format) = create_image(&device, queue_family_index);
+  let requirements = get_image_memory_requirements(&device, &image);
+  dbg!(requirements);
   let memory_type_bits = requirements.memory_type_bits;
   let memory_type_index = 
     memory::get_memory_type_index_raw(&instance, &physical_device, memory_kind_flags, memory_type_bits)
     .expect("no suitable memory type index found");
   let memory_allocation = allocate_memory(&device, memory_type_index, requirements.size);
   let offset = 0;
-  bind_buffer_memory(&device, &buffer, &memory_allocation, offset);
+  bind_image_memory(&device, &image, &memory_allocation, offset);
 
   // map the memory so the CPU can consume it
   let mapped_memory = map_memory(&device, &memory_allocation);
+
+  // populate the image
+  let rgbw_bytes = get_rgbw_bytes();
+  write_bytes(mapped_memory, &rgbw_bytes);
 
   // queue
   let queue = get_queue(&device, queue_family_index, queue_index);
@@ -46,7 +50,7 @@ fn main() {
   let command_buffer = create_command_buffer(&device, &command_pool);
 
   // recording
-  record_command_buffer(&device, &command_buffer, &buffer, buffer_size);
+  record_command_buffer_image(&device, &command_buffer, &image);
 
   // submit
   let fence = submit(&device, &queue, &command_buffer);
@@ -56,15 +60,14 @@ fn main() {
   let timeout_ns = timeout_ms * 1000 * 1000;
   unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
 
-  let buffer_values = read_buffer_to_cpu(mapped_memory, buffer_size);
-  dbg!(&buffer_values, &buffer_values.len());
+  print_image(mapped_memory, &extent, &image_format);
 
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { device.destroy_fence(fence, None); }
   unsafe { device.free_command_buffers(command_pool, &[command_buffer]); }
   unsafe { device.destroy_command_pool(command_pool, None); }
   unsafe { device.free_memory(memory_allocation, None); }
-  unsafe { device.destroy_buffer(buffer, None); }
+  unsafe { device.destroy_image(image, None); }
   unsafe { device.destroy_device(None); }
   unsafe { instance.destroy_instance(None); }
   println!("Finished");
@@ -137,6 +140,7 @@ fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Dev
     if supported_version < required_vulkan_version { return false; }
 
     let limits = properties.limits;
+    let max_image_size = limits.max_image_dimension2_d;
     // dbg!(limits.buffer_image_granularity);
     // dbg!(limits.non_coherent_atom_size);
 
@@ -215,20 +219,54 @@ fn create_buffer(device: &ash::Device, buffer_size: u64) -> ash::vk::Buffer {
   let flags = ash::vk::BufferCreateFlags::empty();
   let usage = ash::vk::BufferUsageFlags::TRANSFER_SRC | ash::vk::BufferUsageFlags::TRANSFER_DST;
   let sharing_mode = ash::vk::SharingMode::EXCLUSIVE; // used in one queue
-  let buffer_create_info = ash::vk::BufferCreateInfo::default()
+  let create_info = ash::vk::BufferCreateInfo::default()
     .flags(flags) 
     .size(buffer_size)
     .usage(usage)
     .sharing_mode(sharing_mode);
 
-  let buffer = unsafe { device.create_buffer(&buffer_create_info, None).expect("Could not create Vulkan buffer") };
+  let buffer = unsafe { device.create_buffer(&create_info, None).expect("Could not create Vulkan buffer") };
   buffer
 }
 
-fn create_image(device: &ash::Device) -> ash::vk::Image {
-  let image_create_info = ash::vk::ImageCreateInfo::default();
-  let image = unsafe { device.create_image(&image_create_info, None).expect("Could not create Vulkan image") };
-  image
+/// just a handle. not backed with memory
+fn create_image(device: &ash::Device, queue_family_index: u32) -> (ash::vk::Image, ash::vk::Extent3D, ash::vk::Format) {
+  let flags = ash::vk::ImageCreateFlags::empty();
+  let usage = 
+    ash::vk::ImageUsageFlags::TRANSFER_SRC
+    | ash::vk::ImageUsageFlags::TRANSFER_DST
+    | ash::vk::ImageUsageFlags::SAMPLED // means that the image can be sampled from in a shader
+    ;
+  let sharing_mode = ash::vk::SharingMode::EXCLUSIVE; // used in one queue
+  let image_type = ash::vk::ImageType::TYPE_2D;
+  let initial_layout = ash::vk::ImageLayout::UNDEFINED;
+  let image_format = ash::vk::Format::R8G8B8_UNORM;
+  let extent = ash::vk::Extent3D::default()
+    .width(2)
+    .height(2)
+    .depth(1);
+  let tiling = ash::vk::ImageTiling::LINEAR; // in prod, use OPTIMAL
+  let queue_family_indices = [queue_family_index];
+  let samples = ash::vk::SampleCountFlags::TYPE_1; // no multi-sampling
+  let mip_levels = 1;
+  let array_layers = 1;
+  let create_info = ash::vk::ImageCreateInfo::default()
+    .flags(flags) 
+    .image_type(image_type)
+    .initial_layout(initial_layout)
+    .format(image_format)
+    .extent(extent)
+    .tiling(tiling)
+    .usage(usage)
+    .sharing_mode(sharing_mode)
+    .queue_family_indices(&queue_family_indices)
+    .samples(samples)
+    .mip_levels(mip_levels)
+    .array_layers(array_layers)
+    ;
+
+  let image = unsafe { device.create_image(&create_info, None).expect("Could not create Vulkan image") };
+  (image, extent, image_format)
 }
 
 fn allocate_memory(device: &ash::Device, memory_type_index: u32, size: u64) -> ash::vk::DeviceMemory {
@@ -264,15 +302,21 @@ fn print_heap_usage(instance: &ash::Instance, physical_device: &ash::vk::Physica
 }
 
 fn get_buffer_memory_requirements(device: &ash::Device, buffer: &ash::vk::Buffer) -> ash::vk::MemoryRequirements {
-  let buffer_memory_requirements = unsafe { device.get_buffer_memory_requirements(*buffer) };
-  let size = buffer_memory_requirements.size;
-  let alignment = buffer_memory_requirements.alignment;
-  let bits = buffer_memory_requirements.memory_type_bits;
-  return buffer_memory_requirements;
+  let reqs = unsafe { device.get_buffer_memory_requirements(*buffer) };
+  return reqs;
+}
+
+fn get_image_memory_requirements(device: &ash::Device, image: &ash::vk::Image) -> ash::vk::MemoryRequirements {
+  let reqs = unsafe { device.get_image_memory_requirements(*image) };
+  return reqs;
 }
 
 fn bind_buffer_memory(device: &ash::Device, buffer: &ash::vk::Buffer, memory_allocation: &ash::vk::DeviceMemory, offset: u64) -> () {
   unsafe { device.bind_buffer_memory(*buffer, *memory_allocation, offset).expect("failed to bind buffer memory") }
+}
+
+fn bind_image_memory(device: &ash::Device, image: &ash::vk::Image, memory_allocation: &ash::vk::DeviceMemory, offset: u64) -> () {
+  unsafe { device.bind_image_memory(*image, *memory_allocation, offset).expect("failed to bind image memory") }
 }
 
 fn get_queue(device: &ash::Device, queue_family_index: u32, queue_index: u32) -> ash::vk::Queue { 
@@ -299,7 +343,7 @@ fn create_command_buffer(device: &ash::Device, command_pool: &ash::vk::CommandPo
   return *command_buffers.get(0).expect("no command buffers created?");
 }
 
-fn record_command_buffer(device: &ash::Device, command_buffer: &ash::vk::CommandBuffer, buffer: &ash::vk::Buffer, buffer_size: u64) -> () {
+fn record_command_buffer_buffer(device: &ash::Device, command_buffer: &ash::vk::CommandBuffer, buffer: &ash::vk::Buffer, buffer_size: u64) -> () {
   let begin_flags = ash::vk::CommandBufferUsageFlags::default();
   let begin_create_info = ash::vk::CommandBufferBeginInfo::default()
     .flags(begin_flags);
@@ -311,6 +355,23 @@ fn record_command_buffer(device: &ash::Device, command_buffer: &ash::vk::Command
     let offset = 0;
     let data = 257;
     device.cmd_fill_buffer(*command_buffer, *buffer, offset, ash::vk::WHOLE_SIZE, data);
+
+    device
+    .end_command_buffer(*command_buffer)
+    .expect("failed to end command buffer");
+  };
+}
+
+fn record_command_buffer_image(device: &ash::Device, command_buffer: &ash::vk::CommandBuffer, image: &ash::vk::Image) -> () {
+  let begin_flags = ash::vk::CommandBufferUsageFlags::default();
+  let begin_create_info = ash::vk::CommandBufferBeginInfo::default()
+    .flags(begin_flags);
+  unsafe { 
+    device
+    .begin_command_buffer(*command_buffer, &begin_create_info)
+    .expect("failed to begin command buffer");
+
+    // no-op?
 
     device
     .end_command_buffer(*command_buffer)
@@ -337,7 +398,6 @@ fn map_memory(device: &ash::Device, memory_allocation: &ash::vk::DeviceMemory) -
 }
 
 fn print_buffer(mapped_memory: *mut std::ffi::c_void, buffer_size: u64) -> () {
-  print_endianness();
   unsafe {
     // Cast the void pointer to a u8 pointer
     let byte_ptr = mapped_memory as *mut u8;
@@ -346,7 +406,41 @@ fn print_buffer(mapped_memory: *mut std::ffi::c_void, buffer_size: u64) -> () {
     let slice = std::slice::from_raw_parts(byte_ptr, buffer_size as usize);
 
     // Now you can use the slice safely
-    dbg!(&slice[0..4], slice.len());
+    dbg!(&slice, slice.len());
+  }
+}
+
+fn write_bytes(mapped_memory: *mut std::ffi::c_void, bytes: &[u8]) {
+  unsafe {
+    let byte_ptr = mapped_memory as *mut u8;
+
+    // Create a slice from the raw pointer
+    let slice = std::slice::from_raw_parts_mut(byte_ptr, bytes.len());
+
+    // Now you can use the slice safely
+    slice.copy_from_slice(bytes);
+  }
+}
+
+fn print_image(
+  mapped_memory: *mut std::ffi::c_void,
+  extent: &ash::vk::Extent3D,
+  format: &ash::vk::Format,
+) {
+  unsafe {
+    let byte_ptr = mapped_memory as *const u8;
+
+    let bytes_per_pixel = match *format {
+      ash::vk::Format::R8G8B8_UNORM => 3,
+      _ => {
+        panic!("Unsupported format for printing {:?}", format);
+      }
+    };
+
+    let image_size = extent.width * extent.height * extent.depth * bytes_per_pixel;
+
+    let slice = std::slice::from_raw_parts(byte_ptr, image_size as usize);
+    dbg!(&slice, slice.len());
   }
 }
 
@@ -372,6 +466,15 @@ fn read_buffer_to_cpu(mapped_memory: *mut std::ffi::c_void, buffer_size: u64) ->
     }
     acc
   }
+}
+
+fn get_rgbw_bytes() -> Vec<u8> {
+  vec![
+    255, 0, 0, 
+    0, 255, 0, 
+    0, 0, 255, 
+    255, 255, 255, 
+  ]
 }
 
 
