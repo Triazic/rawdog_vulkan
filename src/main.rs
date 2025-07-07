@@ -1,6 +1,6 @@
 #![allow(dead_code, unused_variables, unused_imports)]
 
-use std::{ffi::CString, str::FromStr};
+use std::{ffi::CString, io::Read, str::FromStr};
 pub mod utils;
 pub mod constants;
 pub mod memory;
@@ -24,7 +24,6 @@ fn main() {
   // allocate the buffer
   let (image, extent, image_format) = create_image(&device, queue_family_index);
   let requirements = get_image_memory_requirements(&device, &image);
-  dbg!(requirements);
   let memory_type_bits = requirements.memory_type_bits;
   let memory_type_index = 
     memory::get_memory_type_index_raw(&instance, &physical_device, memory_kind_flags, memory_type_bits)
@@ -38,6 +37,7 @@ fn main() {
 
   // populate the image
   let rgbw_bytes = get_rgbw_bytes();
+  dbg!(&rgbw_bytes);
   write_bytes(mapped_memory, &rgbw_bytes);
 
   // queue
@@ -133,6 +133,23 @@ fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Dev
 
     // memory flags
     if !memory::get_if_physical_device_supports_all_memory_requirements(instance, physical_device) { return false; }
+
+    // supported image formats
+    let req_formats = [ash::vk::Format::R8G8B8A8_UNORM];
+    if !req_formats.iter().all(|&req_format|
+      {
+        let props = unsafe {
+          instance.get_physical_device_format_properties(*physical_device, req_format)
+        };
+
+        let flags = ash::vk::FormatFeatureFlags::SAMPLED_IMAGE;
+
+        let pass_linear = props.linear_tiling_features & flags == flags;
+        let pass_optimal = props.optimal_tiling_features & flags == flags;
+  
+        pass_linear && pass_optimal
+      }
+    ) { return false; }
 
     // check vulkan version
     let required_vulkan_version = constants::API_VERSION;
@@ -240,7 +257,7 @@ fn create_image(device: &ash::Device, queue_family_index: u32) -> (ash::vk::Imag
   let sharing_mode = ash::vk::SharingMode::EXCLUSIVE; // used in one queue
   let image_type = ash::vk::ImageType::TYPE_2D;
   let initial_layout = ash::vk::ImageLayout::UNDEFINED;
-  let image_format = ash::vk::Format::R8G8B8_UNORM;
+  let image_format = ash::vk::Format::R8G8B8A8_UNORM;
   let extent = ash::vk::Extent3D::default()
     .width(2)
     .height(2)
@@ -431,7 +448,7 @@ fn print_image(
     let byte_ptr = mapped_memory as *const u8;
 
     let bytes_per_pixel = match *format {
-      ash::vk::Format::R8G8B8_UNORM => 3,
+      ash::vk::Format::R8G8B8A8_UNORM => 4,
       _ => {
         panic!("Unsupported format for printing {:?}", format);
       }
@@ -469,12 +486,13 @@ fn read_buffer_to_cpu(mapped_memory: *mut std::ffi::c_void, buffer_size: u64) ->
 }
 
 fn get_rgbw_bytes() -> Vec<u8> {
-  vec![
-    255, 0, 0, 
-    0, 255, 0, 
-    0, 0, 255, 
-    255, 255, 255, 
-  ]
+  let img = 
+    image::ImageReader::open("./assets/RGBW.png")
+    .expect("failed to read image")
+    .decode()
+    .expect("failed to decode image");
+  let bytes = img.into_rgba8().into_raw();
+  bytes
 }
 
 
