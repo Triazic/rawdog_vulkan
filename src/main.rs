@@ -444,7 +444,9 @@ fn write_bytes(mapped_memory: *mut std::ffi::c_void, bytes: &[u8], layout: &ash:
         for channel in 0..4 { // four channels
           let dst_i = (x + channel) as usize;
           let src_i = (y + channel) as usize;
-          slice[dst_i] = bytes[src_i];
+          let dst_slc = &mut slice[dst_i..(dst_i + 1)];
+          let src_slc = &bytes[src_i..(src_i + 1)];
+          dst_slc.copy_from_slice(src_slc);
         }
       }
     }
