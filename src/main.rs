@@ -438,17 +438,12 @@ fn write_bytes(mapped_memory: *mut std::ffi::c_void, bytes: &[u8], layout: &ash:
     assert!(offset == 0, "offset should be 0");
 
     for row in 0..extent.height {
-      for col in 0..extent.width {
-        let x = row * row_pitch + col * 4; // base index into destination
-        let y = row * extent.width * 4 + col * 4; // base index into source
-        for channel in 0..4 { // four channels
-          let dst_i = (x + channel) as usize;
-          let src_i = (y + channel) as usize;
-          let dst_slc = &mut slice[dst_i..(dst_i + 1)];
-          let src_slc = &bytes[src_i..(src_i + 1)];
-          dst_slc.copy_from_slice(src_slc);
-        }
-      }
+      let x = (row * row_pitch) as usize; // base index into destination
+      let y = (row * extent.width * 4) as usize; // base index into source
+      let scanline_width = (extent.width * 4) as usize;
+      let dst_slc = &mut slice[x..(x + scanline_width)];
+      let src_slc = &bytes[y..(y + scanline_width)];
+      dst_slc.copy_from_slice(src_slc);
     }
   }
 }
