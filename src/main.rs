@@ -37,8 +37,8 @@ fn main() {
 
   // populate the image
   let rgbw_bytes = get_rgbw_bytes();
-  dbg!(&rgbw_bytes);
-  write_bytes(mapped_memory, &rgbw_bytes);
+  let image_layout = get_image_layout(&device, image);
+  write_bytes(mapped_memory, &rgbw_bytes, &image_layout, &extent);
 
   // queue
   let queue = get_queue(&device, queue_family_index, queue_index);
@@ -60,7 +60,7 @@ fn main() {
   let timeout_ns = timeout_ms * 1000 * 1000;
   unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
 
-  print_image(mapped_memory, &extent, &image_format);
+  print_image(mapped_memory, &image_layout, &extent, &image_format);
 
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { device.destroy_fence(fence, None); }
@@ -427,38 +427,58 @@ fn print_buffer(mapped_memory: *mut std::ffi::c_void, buffer_size: u64) -> () {
   }
 }
 
-fn write_bytes(mapped_memory: *mut std::ffi::c_void, bytes: &[u8]) {
+fn write_bytes(mapped_memory: *mut std::ffi::c_void, bytes: &[u8], layout: &ash::vk::SubresourceLayout, extent: &ash::vk::Extent3D) {
   unsafe {
     let byte_ptr = mapped_memory as *mut u8;
+    let row_pitch = layout.row_pitch as u32;
+    let image_size = row_pitch * extent.height * extent.depth * 4;
+    let slice = std::slice::from_raw_parts_mut(byte_ptr, image_size as usize);
 
-    // Create a slice from the raw pointer
-    let slice = std::slice::from_raw_parts_mut(byte_ptr, bytes.len());
+    let offset = layout.offset;
+    assert!(offset == 0, "offset should be 0");
 
-    // Now you can use the slice safely
-    slice.copy_from_slice(bytes);
+    for row in 0..extent.height {
+      for col in 0..extent.width {
+        let x = row * row_pitch + col * 4; // base index into destination
+        let y = row * extent.width * 4 + col * 4; // base index into source
+        for channel in 0..4 { // four channels
+          let dst_i = (x + channel) as usize;
+          let src_i = (y + channel) as usize;
+          slice[dst_i] = bytes[src_i];
+        }
+      }
+    }
   }
 }
 
 fn print_image(
   mapped_memory: *mut std::ffi::c_void,
+  layout: &ash::vk::SubresourceLayout, 
   extent: &ash::vk::Extent3D,
   format: &ash::vk::Format,
 ) {
   unsafe {
     let byte_ptr = mapped_memory as *const u8;
 
-    let bytes_per_pixel = match *format {
-      ash::vk::Format::R8G8B8A8_UNORM => 4,
-      _ => {
-        panic!("Unsupported format for printing {:?}", format);
-      }
-    };
-
-    let image_size = extent.width * extent.height * extent.depth * bytes_per_pixel;
-
+    let row_pitch = layout.row_pitch as u32;
+    let image_size = row_pitch * extent.height * extent.depth * 4;
     let slice = std::slice::from_raw_parts(byte_ptr, image_size as usize);
-    dbg!(&slice, slice.len());
+    
+    for row in 0..extent.height {
+      let x = row * row_pitch; // base index into destination
+      let row_slice = &slice[x as usize..(x + extent.width * 4) as usize];
+      println!("{:?}", row_slice);
+    }
   }
+}
+
+fn get_image_layout(device: &ash::Device, image: ash::vk::Image) -> ash::vk::SubresourceLayout {
+  let subresource = ash::vk::ImageSubresource::default()
+    .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+    .mip_level(0)
+    .array_layer(0);
+  let image_subresource_layout = unsafe { device.get_image_subresource_layout(image, subresource) };
+  image_subresource_layout
 }
 
 fn read_buffer_to_cpu(mapped_memory: *mut std::ffi::c_void, buffer_size: u64) -> Vec<u32> {
