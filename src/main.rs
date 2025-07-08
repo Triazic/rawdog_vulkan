@@ -56,8 +56,19 @@ fn main() {
   // command buffer
   let command_buffer = create_command_buffer(&device, &command_pool);
 
+  // make a surface
+  let surface_instance = create_surface_instance(&entry, &instance);
+  let surface = create_surface(&entry, &instance, &display_handle.into(), &window_handle.into());
+
+  // make swapchain
+  let (swapchain_device, swapchain) = create_swapchain(&instance, &physical_device, &device, &surface, &surface_instance, &extent);
+
+  // get swapchain images
+  let swapchain_images = get_swapchain_images(&swapchain_device, &swapchain);
+  let (next_swapchain_image, next_swapchain_image_index) = get_next_swapchain_image(&device, &swapchain_device, &swapchain, &swapchain_images);
+
   // recording
-  record_command_buffer_image(&device, &command_buffer, &image);
+  record_command_buffer_image(&device, &command_buffer, &next_swapchain_image);
 
   // submit
   let fence = submit(&device, &queue, &command_buffer);
@@ -69,16 +80,8 @@ fn main() {
 
   print_image(mapped_memory, &image_layout, &extent, &image_format);
 
-  // make a surface
-  let surface_instance = create_surface_instance(&entry, &instance);
-  let surface = create_surface(&entry, &instance, &display_handle.into(), &window_handle.into());
-
-  // make swapchain
-  let (swapchain_device, swapchain) = create_swapchain(&instance, &physical_device, &device, &surface, &surface_instance, &extent);
-
-  // get swapchain images
-  let swapchain_images = get_swapchain_images(&swapchain_device, &swapchain);
-  let next_swapchain_image = get_next_swapchain_image(&device, &swapchain_device, &swapchain, &swapchain_images);
+  // present the image
+  present_image(&swapchain_device, &queue, &swapchain, next_swapchain_image_index);
 
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { swapchain_device.destroy_swapchain(swapchain, None); }
@@ -318,6 +321,7 @@ fn create_image(device: &ash::Device, queue_family_index: u32) -> (ash::vk::Imag
     ash::vk::ImageUsageFlags::TRANSFER_SRC
     | ash::vk::ImageUsageFlags::TRANSFER_DST
     | ash::vk::ImageUsageFlags::SAMPLED // means that the image can be sampled from in a shader
+    | ash::vk::ImageUsageFlags::COLOR_ATTACHMENT
     ;
   let sharing_mode = ash::vk::SharingMode::EXCLUSIVE; // used in one queue
   let image_type = ash::vk::ImageType::TYPE_2D;
@@ -453,7 +457,29 @@ fn record_command_buffer_image(device: &ash::Device, command_buffer: &ash::vk::C
     .begin_command_buffer(*command_buffer, &begin_create_info)
     .expect("failed to begin command buffer");
 
-    // no-op?
+  let image_memory_barrier = ash::vk::ImageMemoryBarrier::default()
+    .old_layout(ash::vk::ImageLayout::UNDEFINED)
+    .new_layout(ash::vk::ImageLayout::PRESENT_SRC_KHR)
+    .src_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
+    .dst_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
+    .image(*image)
+    .subresource_range(ash::vk::ImageSubresourceRange::default()
+      .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+      .base_mip_level(0)
+      .level_count(1)
+      .base_array_layer(0)
+      .layer_count(1)
+    );
+
+    device.cmd_pipeline_barrier(
+      *command_buffer, 
+      ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT, 
+      ash::vk::PipelineStageFlags::BOTTOM_OF_PIPE, 
+      ash::vk::DependencyFlags::empty(), 
+      &[], 
+      &[], 
+      &[image_memory_barrier]
+    );
 
     device
     .end_command_buffer(*command_buffer)
@@ -624,7 +650,7 @@ fn get_swapchain_images(swapchain_device: &ash::khr::swapchain::Device, swapchai
   swapchain_images
 }
 
-fn get_next_swapchain_image<'a>(device: &ash::Device, swapchain_device: &ash::khr::swapchain::Device, swapchain: &ash::vk::SwapchainKHR, swapchain_images: &'a Vec<ash::vk::Image>) -> &'a ash::vk::Image {
+fn get_next_swapchain_image<'a>(device: &ash::Device, swapchain_device: &ash::khr::swapchain::Device, swapchain: &ash::vk::SwapchainKHR, swapchain_images: &'a Vec<ash::vk::Image>) -> (&'a ash::vk::Image, u32) {
   let timeout = 16 * 1000 * 1000;
   let semaphore = ash::vk::Semaphore::null();
   let fence = unsafe { device.create_fence(&ash::vk::FenceCreateInfo::default(), None).expect("failed to create fence") };
@@ -632,5 +658,22 @@ fn get_next_swapchain_image<'a>(device: &ash::Device, swapchain_device: &ash::kh
   unsafe { device.wait_for_fences(&[fence], true, timeout).expect("failed to wait for swapchain image fence"); }
   unsafe { device.destroy_fence(fence, None); }
   let image = swapchain_images.get(image_index as usize).expect("failed to get swapchain image from index");
-  image
+  (image, image_index)
+}
+
+fn present_image(
+  swapchain_device: &ash::khr::swapchain::Device,
+  present_queue: &ash::vk::Queue,
+  swapchain: &ash::vk::SwapchainKHR,
+  image_index: u32,
+) -> () {
+  let swapchains = [*swapchain];
+  let image_indices = [image_index];
+  let present_info = ash::vk::PresentInfoKHR::default()
+    .swapchains(&swapchains)
+    .image_indices(&image_indices);
+
+  unsafe {
+    swapchain_device.queue_present(*present_queue, &present_info).expect("Failed to present swapchain image");
+  }
 }
