@@ -256,14 +256,11 @@ fn create_device(entry: &ash::Entry, instance: &ash::Instance, display_handle: &
       if !properties.queue_flags.contains(*req_flag) { return false; }
     }
 
-    // supports presentation
-    // ?
-
     // check for surface support
-    // let surface_loader = ash::khr::surface::Instance::new(entry, instance);
-    // let surface = create_surface(entry, instance, display_handle, window_handle);
-    // let surface_support = unsafe { surface_loader.get_physical_device_surface_support(physical_device, i as u32, surface).expect("failed to get physical device surface support") };
-    // if !surface_support { return false; }
+    let surface_loader = ash::khr::surface::Instance::new(entry, instance);
+    let surface = create_surface(entry, instance, display_handle, window_handle);
+    let surface_support = unsafe { surface_loader.get_physical_device_surface_support(physical_device, i as u32, surface).expect("failed to get physical device surface support") };
+    if !surface_support { return false; }
 
     true // queue family is adequate
   }).expect("no queue family satisifies the requirements of this application");
