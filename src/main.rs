@@ -71,7 +71,7 @@ fn main() {
 
   // make a surface
   let surface = create_surface(&entry, &instance, &display_handle.into(), &window_handle.into());
-  let (swapchain_device, swapchain) = create_swapchain(&instance, &device);
+  let (swapchain_device, swapchain) = create_swapchain(&instance, &device, &surface);
 
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { device.destroy_fence(fence, None); }
@@ -117,6 +117,10 @@ fn create_instance(entry: &ash::Entry, display_handle: Option<raw_window_handle:
 
   // check that required extensions are supported
   let extensions = unsafe { entry.enumerate_instance_extension_properties(None).expect("failed to enumerate instance extension properties") };
+  // extensions.iter().for_each(|extension| {
+  //   let name = extension.extension_name_as_c_str().expect("could not get extension name").to_str().expect("could not convert extension name to &str");
+  //   println!("instance extension {}", name);
+  // });
   let assert_extension_supported = |extension_name: &str| {
     let has = extensions.iter().any(|extension| {
       let name = extension.extension_name_as_c_str().expect("could not get extension name").to_str().expect("could not convert extension name to &str");
@@ -559,9 +563,29 @@ fn create_surface(entry: &ash::Entry, instance: &ash::Instance, display_handle: 
   surface
 }
 
-fn create_swapchain(instance: &ash::Instance, device: &ash::Device) -> (ash::khr::swapchain::Device, ash::vk::SwapchainKHR) {
+fn create_swapchain(instance: &ash::Instance, device: &ash::Device, surface: &ash::vk::SurfaceKHR) -> (ash::khr::swapchain::Device, ash::vk::SwapchainKHR) {
   let swapchain_device = ash::khr::swapchain::Device::new(instance, device);
-  let create_info = ash::vk::SwapchainCreateInfoKHR::default();
+  let desired_image_count = 2;
+  let color_space = ash::vk::ColorSpaceKHR::SRGB_NONLINEAR;
+  let image_format = ash::vk::Format::R8G8B8A8_UNORM;
+  let pre_transform = ash::vk::SurfaceTransformFlagsKHR::IDENTITY;
+  let present_mode = ash::vk::PresentModeKHR::IMMEDIATE;
+  let extent = ash::vk::Extent2D::default().width(100).height(100);
+  let create_info =  
+    ash::vk::SwapchainCreateInfoKHR::default()
+    .surface(*surface)
+    .min_image_count(desired_image_count)
+    .image_color_space(color_space)
+    .image_format(image_format)
+    .image_extent(extent)
+    .image_usage(ash::vk::ImageUsageFlags::COLOR_ATTACHMENT)
+    .image_sharing_mode(ash::vk::SharingMode::EXCLUSIVE)
+    .pre_transform(pre_transform)
+    .composite_alpha(ash::vk::CompositeAlphaFlagsKHR::OPAQUE)
+    .present_mode(present_mode)
+    .clipped(true)
+    .image_array_layers(1);
+    ;
   let swapchain = unsafe { swapchain_device.create_swapchain(&create_info, None).expect("failed to create swapchain") };
   (swapchain_device, swapchain)
 }
