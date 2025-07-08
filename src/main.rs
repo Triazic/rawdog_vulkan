@@ -23,7 +23,6 @@ fn main() {
   let instance = create_instance(&entry, display_handle.into());
   let (physical_device, device, queue_family_index) = create_device(&entry, &instance, &display_handle.into(), &window_handle.into());
   let queue_index = 0; // only one queue for now
-  dbg!(queue_family_index);
 
   // get memory_type_index for the buffer
   let memory_kind = constants::MemoryKind::Image1;
@@ -73,11 +72,18 @@ fn main() {
   // make a surface
   let surface_instance = create_surface_instance(&entry, &instance);
   let surface = create_surface(&entry, &instance, &display_handle.into(), &window_handle.into());
-  let (swapchain_device, swapchain) = create_swapchain(&instance, &physical_device, &device, &surface, &surface_instance);
+
+  // make swapchain
+  let (swapchain_device, swapchain) = create_swapchain(&instance, &physical_device, &device, &surface, &surface_instance, &extent);
+
+  // get swapchain images
+  let swapchain_images = get_swapchain_images(&swapchain_device, &swapchain);
+  let next_swapchain_image = get_next_swapchain_image(&device, &swapchain_device, &swapchain, &swapchain_images);
 
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
-  unsafe { device.destroy_fence(fence, None); }
   unsafe { swapchain_device.destroy_swapchain(swapchain, None); }
+  unsafe { surface_instance.destroy_surface(surface, None); }
+  unsafe { device.destroy_fence(fence, None); }
   unsafe { device.free_command_buffers(command_pool, &[command_buffer]); }
   unsafe { device.destroy_command_pool(command_pool, None); }
   unsafe { device.free_memory(memory_allocation, None); }
@@ -258,10 +264,11 @@ fn create_device(entry: &ash::Entry, instance: &ash::Instance, display_handle: &
     }
 
     // check for surface / presentation support
-    let surface_loader = ash::khr::surface::Instance::new(entry, instance);
+    let surface_instance = ash::khr::surface::Instance::new(entry, instance);
     let surface = create_surface(entry, instance, display_handle, window_handle);
-    let surface_support = unsafe { surface_loader.get_physical_device_surface_support(physical_device, i as u32, surface).expect("failed to get physical device surface support") };
+    let surface_support = unsafe { surface_instance.get_physical_device_surface_support(physical_device, i as u32, surface).expect("failed to get physical device surface support") };
     if !surface_support { return false; }
+    unsafe { surface_instance.destroy_surface(surface, None); }
 
     true // queue family is adequate
   }).expect("no queue family satisifies the requirements of this application");
@@ -580,16 +587,19 @@ fn create_surface(entry: &ash::Entry, instance: &ash::Instance, display_handle: 
   surface
 }
 
-fn create_swapchain(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice, device: &ash::Device, surface: &ash::vk::SurfaceKHR, surface_instance: &ash::khr::surface::Instance) -> (ash::khr::swapchain::Device, ash::vk::SwapchainKHR) {
+fn create_swapchain(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice, device: &ash::Device, surface: &ash::vk::SurfaceKHR, surface_instance: &ash::khr::surface::Instance, extent: &ash::vk::Extent3D) -> (ash::khr::swapchain::Device, ash::vk::SwapchainKHR) {
   let swapchain_device = ash::khr::swapchain::Device::new(instance, device);
   let physical_device_surface_capabilities = unsafe { surface_instance.get_physical_device_surface_capabilities(*physical_device, *surface).expect("failed to get physical device surface capabilities") };
   let max_images = physical_device_surface_capabilities.min_image_count;
   let desired_image_count = max_images;
+  let supported_usage_flags = physical_device_surface_capabilities.supported_usage_flags;
+  let usage_flags = ash::vk::ImageUsageFlags::COLOR_ATTACHMENT;
+  assert!(usage_flags & supported_usage_flags == usage_flags, "at least one image usage flag is not supported");
   let color_space = ash::vk::ColorSpaceKHR::SRGB_NONLINEAR;
   let image_format = ash::vk::Format::R8G8B8A8_UNORM;
   let pre_transform = ash::vk::SurfaceTransformFlagsKHR::IDENTITY;
-  let present_mode = ash::vk::PresentModeKHR::IMMEDIATE;
-  let extent = ash::vk::Extent2D::default().width(100).height(100);
+  let present_mode = ash::vk::PresentModeKHR::MAILBOX;
+  let extent = ash::vk::Extent2D::default().width(extent.width).height(extent.height);
   let create_info =  
     ash::vk::SwapchainCreateInfoKHR::default()
     .surface(*surface)
@@ -597,7 +607,7 @@ fn create_swapchain(instance: &ash::Instance, physical_device: &ash::vk::Physica
     .image_color_space(color_space)
     .image_format(image_format)
     .image_extent(extent)
-    .image_usage(ash::vk::ImageUsageFlags::COLOR_ATTACHMENT)
+    .image_usage(usage_flags)
     .image_sharing_mode(ash::vk::SharingMode::EXCLUSIVE)
     .pre_transform(pre_transform)
     .composite_alpha(ash::vk::CompositeAlphaFlagsKHR::OPAQUE)
@@ -607,4 +617,20 @@ fn create_swapchain(instance: &ash::Instance, physical_device: &ash::vk::Physica
     ;
   let swapchain = unsafe { swapchain_device.create_swapchain(&create_info, None).expect("failed to create swapchain") };
   (swapchain_device, swapchain)
+}
+
+fn get_swapchain_images(swapchain_device: &ash::khr::swapchain::Device, swapchain: &ash::vk::SwapchainKHR) -> Vec<ash::vk::Image> {
+  let swapchain_images = unsafe { swapchain_device.get_swapchain_images(*swapchain).expect("failed to get swapchain images") };
+  swapchain_images
+}
+
+fn get_next_swapchain_image<'a>(device: &ash::Device, swapchain_device: &ash::khr::swapchain::Device, swapchain: &ash::vk::SwapchainKHR, swapchain_images: &'a Vec<ash::vk::Image>) -> &'a ash::vk::Image {
+  let timeout = 16 * 1000 * 1000;
+  let semaphore = ash::vk::Semaphore::null();
+  let fence = unsafe { device.create_fence(&ash::vk::FenceCreateInfo::default(), None).expect("failed to create fence") };
+  let (image_index, suboptimal) = unsafe { swapchain_device.acquire_next_image(*swapchain, timeout, semaphore, fence).expect("failed to acquire next image") };
+  unsafe { device.wait_for_fences(&[fence], true, timeout).expect("failed to wait for swapchain image fence"); }
+  unsafe { device.destroy_fence(fence, None); }
+  let image = swapchain_images.get(image_index as usize).expect("failed to get swapchain image from index");
+  image
 }
