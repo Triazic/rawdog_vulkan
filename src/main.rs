@@ -7,7 +7,7 @@ pub mod memory;
 extern crate itertools;
 extern crate strum;
 use itertools::Itertools;
-use raw_window_handle::HasDisplayHandle;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use utils::{cstr};
 use crate::{memory::{print_flags, split_flags, split_flags_u32}, utils::print_endianness};
 
@@ -16,6 +16,7 @@ fn main() {
   let event_loop = winit::event_loop::EventLoop::new().expect("failed to create event loop");
   let window = winit::window::WindowBuilder::new().build(&event_loop).expect("failed to create window");
   let display_handle = window.display_handle().expect("failed to get display handle");
+  let window_handle = window.window_handle().expect("failed to get window handle");
 
   // make entry, instance, device
   let entry = create_entry();
@@ -69,10 +70,12 @@ fn main() {
   print_image(mapped_memory, &image_layout, &extent, &image_format);
 
   // make a surface
-  let surface = ash::khr::surface::Instance::new(&entry, &instance);
+  let surface = create_surface(&entry, &instance, &display_handle.into(), &window_handle.into());
+  let (swapchain_device, swapchain) = create_swapchain(&instance, &device);
 
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { device.destroy_fence(fence, None); }
+  unsafe { swapchain_device.destroy_swapchain(swapchain, None); }
   unsafe { device.free_command_buffers(command_pool, &[command_buffer]); }
   unsafe { device.destroy_command_pool(command_pool, None); }
   unsafe { device.free_memory(memory_allocation, None); }
@@ -544,4 +547,21 @@ fn get_rgbw_bytes() -> Vec<u8> {
     .expect("failed to decode image");
   let bytes = img.into_rgba8().into_raw();
   bytes
+}
+
+fn create_surface_instance(entry: &ash::Entry, instance: &ash::Instance) -> ash::khr::surface::Instance {
+  let surface = ash::khr::surface::Instance::new(&entry, &instance);
+  surface
+}
+
+fn create_surface(entry: &ash::Entry, instance: &ash::Instance, display_handle: &raw_window_handle::RawDisplayHandle, window_handle: &raw_window_handle::RawWindowHandle) -> ash::vk::SurfaceKHR {
+  let surface = unsafe { ash_window::create_surface(entry, instance, *display_handle, *window_handle, None).expect("failed to create surface") };
+  surface
+}
+
+fn create_swapchain(instance: &ash::Instance, device: &ash::Device) -> (ash::khr::swapchain::Device, ash::vk::SwapchainKHR) {
+  let swapchain_device = ash::khr::swapchain::Device::new(instance, device);
+  let create_info = ash::vk::SwapchainCreateInfoKHR::default();
+  let swapchain = unsafe { swapchain_device.create_swapchain(&create_info, None).expect("failed to create swapchain") };
+  (swapchain_device, swapchain)
 }
