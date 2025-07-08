@@ -20,7 +20,7 @@ fn main() {
 
   // make entry, instance, device
   let entry = create_entry();
-  let instance = create_instance(&entry, Some(display_handle.into()));
+  let instance = create_instance(&entry, display_handle.into());
   let (physical_device, device, queue_family_index) = create_device(&entry, &instance, &display_handle.into(), &window_handle.into());
   let queue_index = 0; // only one queue for now
   dbg!(queue_family_index);
@@ -91,7 +91,7 @@ fn create_entry() -> ash::Entry {
   entry
 }
 
-fn create_instance(entry: &ash::Entry, display_handle: Option<raw_window_handle::RawDisplayHandle>) -> ash::Instance {
+fn create_instance(entry: &ash::Entry, display_handle: raw_window_handle::RawDisplayHandle) -> ash::Instance {
   // application info
   let application_name = cstr("My Application");
   let application_version = 1;
@@ -132,23 +132,25 @@ fn create_instance(entry: &ash::Entry, display_handle: Option<raw_window_handle:
   constants::REQUIRED_INSTANCE_EXTENSIONS.iter().for_each(|extension| assert_extension_supported(extension));
 
   // ash window instance extensions
-  match display_handle {
-    Some(display_handle) => {
-      let ash_window_instance_extensions = ash_window::enumerate_required_extensions(display_handle).expect("failed to enumerate ash window required extensions");
-      ash_window_instance_extensions.iter().for_each(|extension| {
-        let weird_extension_name = extension;
-        let extension_name_as_str = utils::ptr_to_str(weird_extension_name);
-        assert_extension_supported(extension_name_as_str)
-      });
-    },
-    None => {}
-  }
+  let ash_window_instance_extensions = ash_window::enumerate_required_extensions(display_handle).expect("failed to enumerate ash window required extensions");
+  ash_window_instance_extensions.iter().for_each(|extension| {
+    let weird_extension_name = extension;
+    let extension_name_as_str = utils::ptr_to_str(weird_extension_name);
+    assert_extension_supported(extension_name_as_str)
+  });
+  let ash_window_instance_extensions_strs = ash_window_instance_extensions.iter().map(|extension| utils::ptr_to_str(extension)).collect_vec();
 
   // instance create info
   let flags = ash::vk::InstanceCreateFlags::empty();
   let layer_cstrs = constants::REQUIRED_INSTANCE_LAYERS.iter().map(|str| cstr(str)).collect_vec();
   let layer_ptrs: Vec<*const i8> = layer_cstrs.iter().map(|s| s.as_ptr()).collect();
-  let extension_cstrs = constants::REQUIRED_INSTANCE_EXTENSIONS.iter().map(|str| cstr(str)).collect_vec();
+  let extension_strs = 
+    constants::REQUIRED_INSTANCE_EXTENSIONS.iter()
+    .chain(ash_window_instance_extensions_strs.iter())
+    .unique()
+    .collect_vec();
+    ;
+  let extension_cstrs = extension_strs.iter().map(|str| cstr(str)).collect_vec();
   let extension_ptrs: Vec<*const i8> = extension_cstrs.iter().map(|s| s.as_ptr()).collect();
   let instance_create_info = ash::vk::InstanceCreateInfo::default()
     .flags(flags)
@@ -275,11 +277,13 @@ fn create_device(entry: &ash::Entry, instance: &ash::Instance, display_handle: &
   let queue_create_infos = vec![main_queue];
 
   // device create info
-  let device_extensions = [];
+  let extension_strs: Vec<&str> = constants::REQUIRED_DEVICE_EXTENSIONS.into_iter().collect_vec();
+  let extension_cstrs = extension_strs.iter().map(|str| cstr(str)).collect_vec();
+  let extension_ptrs: Vec<*const i8> = extension_cstrs.iter().map(|s| s.as_ptr()).collect();
   let device_features = ash::vk::PhysicalDeviceFeatures::default();
   let device_create_info = ash::vk::DeviceCreateInfo::default()
     .queue_create_infos(&queue_create_infos)
-    .enabled_extension_names(&device_extensions)
+    .enabled_extension_names(&extension_ptrs)
     .enabled_features(&device_features);
 
   // create device
