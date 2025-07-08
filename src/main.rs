@@ -21,8 +21,9 @@ fn main() {
   // make entry, instance, device
   let entry = create_entry();
   let instance = create_instance(&entry, Some(display_handle.into()));
-  let (physical_device, device, queue_family_index) = create_device(&instance);
+  let (physical_device, device, queue_family_index) = create_device(&entry, &instance, &display_handle.into(), &window_handle.into());
   let queue_index = 0; // only one queue for now
+  dbg!(queue_family_index);
 
   // get memory_type_index for the buffer
   let memory_kind = constants::MemoryKind::Image1;
@@ -160,7 +161,7 @@ fn create_instance(entry: &ash::Entry, display_handle: Option<raw_window_handle:
   instance
 }
 
-fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Device, u32) {
+fn create_device(entry: &ash::Entry, instance: &ash::Instance, display_handle: &raw_window_handle::RawDisplayHandle, window_handle: &raw_window_handle::RawWindowHandle) -> (ash::vk::PhysicalDevice, ash::Device, u32) {
   // physical device
   let physical_devices = unsafe { instance.enumerate_physical_devices().expect("failed to enumerate physical devices") };
   // assert that there is at least one physical device
@@ -242,12 +243,26 @@ fn create_device(instance: &ash::Instance) -> (ash::vk::PhysicalDevice, ash::Dev
   let queue_family_properties = unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
   // find index of first suitable queue family
   assert!(queue_family_properties.len() > 0, "no queue families found");
-  let queue_family_index = queue_family_properties.iter().position(|&properties| {
+  let queue_family_index = queue_family_properties.iter().enumerate().position(|(i, &properties)| {
     if properties.queue_count < 1 { return false; }
-    let req_flags = [ash::vk::QueueFlags::GRAPHICS, ash::vk::QueueFlags::COMPUTE, ash::vk::QueueFlags::TRANSFER];
+    let req_flags = [
+      ash::vk::QueueFlags::GRAPHICS, 
+      ash::vk::QueueFlags::COMPUTE, 
+      ash::vk::QueueFlags::TRANSFER,
+    ];
     for req_flag in req_flags.iter() {
       if !properties.queue_flags.contains(*req_flag) { return false; }
     }
+
+    // supports presentation
+    // ?
+
+    // check for surface support
+    // let surface_loader = ash::khr::surface::Instance::new(entry, instance);
+    // let surface = create_surface(entry, instance, display_handle, window_handle);
+    // let surface_support = unsafe { surface_loader.get_physical_device_surface_support(physical_device, i as u32, surface).expect("failed to get physical device surface support") };
+    // if !surface_support { return false; }
+
     true // queue family is adequate
   }).expect("no queue family satisifies the requirements of this application");
 
