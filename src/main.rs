@@ -9,12 +9,20 @@ extern crate strum;
 use itertools::Itertools;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use utils::{cstr};
+use winit::dpi::LogicalPosition;
 use crate::{memory::{print_flags, split_flags, split_flags_u32}, utils::print_endianness};
 
 fn main() {
   // make window
   let event_loop = winit::event_loop::EventLoop::new().expect("failed to create event loop");
-  let window = winit::window::WindowBuilder::new().build(&event_loop).expect("failed to create window");
+  let window = winit::window::WindowBuilder::new()
+    .with_inner_size(winit::dpi::LogicalSize::new(200.0, 200.0))
+    .with_active(true)
+    .with_resizable(true)
+    .with_decorations(true)
+    .with_enabled_buttons(winit::window::WindowButtons::all())
+    .with_title("some window")
+    .build(&event_loop).expect("failed to create window");
   let display_handle = window.display_handle().expect("failed to get display handle");
   let window_handle = window.window_handle().expect("failed to get window handle");
 
@@ -86,7 +94,7 @@ fn main() {
     window::WindowBuilder,
   };
   event_loop.run(|event, window_target| {
-    window_target.set_control_flow(ControlFlow::Wait);
+    window_target.set_control_flow(ControlFlow::Poll);
 
     match event {
       Event::WindowEvent {
