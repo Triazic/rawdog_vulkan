@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_variables, unused_imports)]
+#![allow(dead_code, unused_variables, unused_imports, redundant_semicolons)]
 
 use std::{ffi::CString, io::Read, str::FromStr};
 pub mod utils;

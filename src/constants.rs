@@ -4,7 +4,7 @@ pub static REQUIRED_INSTANCE_LAYERS: [&str; 1] = ["VK_LAYER_KHRONOS_validation"]
 
 pub static REQUIRED_DEVICE_LAYERS: [&str; 1] = ["VK_LAYER_KHRONOS_validation"];
 
-pub static REQUIRED_DEVICE_EXTENSIONS: [&str; 1] = ["VK_EXT_memory_budget"];
+pub static REQUIRED_DEVICE_EXTENSIONS: [&str; 2] = ["VK_EXT_memory_budget", "VK_KHR_swapchain"];
 
 pub static REQUIRED_INSTANCE_EXTENSIONS: [&str; 1] = ["VK_KHR_surface"];
 
