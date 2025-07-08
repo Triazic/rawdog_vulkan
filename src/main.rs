@@ -118,12 +118,13 @@ fn create_instance(entry: &ash::Entry) -> ash::Instance {
   let flags = ash::vk::InstanceCreateFlags::empty();
   let layer_cstrs = constants::REQUIRED_INSTANCE_LAYERS.iter().map(|str| cstr(str)).collect_vec();
   let layer_ptrs: Vec<*const i8> = layer_cstrs.iter().map(|s| s.as_ptr()).collect();
-  let extension_names = [];
+  let extension_cstrs = constants::REQUIRED_INSTANCE_EXTENSIONS.iter().map(|str| cstr(str)).collect_vec();
+  let extension_ptrs: Vec<*const i8> = extension_cstrs.iter().map(|s| s.as_ptr()).collect();
   let instance_create_info = ash::vk::InstanceCreateInfo::default()
     .flags(flags)
     .application_info(&application_info)
     .enabled_layer_names(&layer_ptrs)
-    .enabled_extension_names(&extension_names);
+    .enabled_extension_names(&extension_ptrs);
 
   // create instance
   let instance = unsafe { entry.create_instance(&instance_create_info, None).expect("Could not create Vulkan instance") };
