@@ -7,16 +7,19 @@ pub mod memory;
 extern crate itertools;
 extern crate strum;
 use itertools::Itertools;
+use raw_window_handle::HasDisplayHandle;
 use utils::{cstr};
 use crate::{memory::{print_flags, split_flags, split_flags_u32}, utils::print_endianness};
 
 fn main() {
   // make window
-  let display_handle = None;
+  let event_loop = winit::event_loop::EventLoop::new().expect("failed to create event loop");
+  let window = winit::window::WindowBuilder::new().build(&event_loop).expect("failed to create window");
+  let display_handle = window.display_handle().expect("failed to get display handle");
 
   // make entry, instance, device
   let entry = create_entry();
-  let instance = create_instance(&entry, display_handle);
+  let instance = create_instance(&entry, Some(display_handle.into()));
   let (physical_device, device, queue_family_index) = create_device(&instance);
   let queue_index = 0; // only one queue for now
 
@@ -542,5 +545,3 @@ fn get_rgbw_bytes() -> Vec<u8> {
   let bytes = img.into_rgba8().into_raw();
   bytes
 }
-
-
