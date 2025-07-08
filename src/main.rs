@@ -103,6 +103,17 @@ fn create_instance(entry: &ash::Entry) -> ash::Instance {
   };
   constants::REQUIRED_INSTANCE_LAYERS.iter().for_each(|layer| assert_layer_supported(layer));
 
+  // check that required extensions are supported
+  let extensions = unsafe { entry.enumerate_instance_extension_properties(None).expect("failed to enumerate instance extension properties") };
+  let assert_extension_supported = |extension_name: &str| {
+    let has = extensions.iter().any(|extension| {
+      let name = extension.extension_name_as_c_str().expect("could not get extension name").to_str().expect("could not convert extension name to &str");
+      name == extension_name
+    });
+    assert!(has, "instance extension {} is not supported", extension_name);
+  };
+  constants::REQUIRED_INSTANCE_EXTENSIONS.iter().for_each(|extension| assert_extension_supported(extension));
+
   // instance create info
   let flags = ash::vk::InstanceCreateFlags::empty();
   let layer_cstrs = constants::REQUIRED_INSTANCE_LAYERS.iter().map(|str| cstr(str)).collect_vec();
