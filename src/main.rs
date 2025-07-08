@@ -71,8 +71,9 @@ fn main() {
   print_image(mapped_memory, &image_layout, &extent, &image_format);
 
   // make a surface
+  let surface_instance = create_surface_instance(&entry, &instance);
   let surface = create_surface(&entry, &instance, &display_handle.into(), &window_handle.into());
-  let (swapchain_device, swapchain) = create_swapchain(&instance, &device, &surface);
+  let (swapchain_device, swapchain) = create_swapchain(&instance, &physical_device, &device, &surface, &surface_instance);
 
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { device.destroy_fence(fence, None); }
@@ -579,9 +580,11 @@ fn create_surface(entry: &ash::Entry, instance: &ash::Instance, display_handle: 
   surface
 }
 
-fn create_swapchain(instance: &ash::Instance, device: &ash::Device, surface: &ash::vk::SurfaceKHR) -> (ash::khr::swapchain::Device, ash::vk::SwapchainKHR) {
+fn create_swapchain(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice, device: &ash::Device, surface: &ash::vk::SurfaceKHR, surface_instance: &ash::khr::surface::Instance) -> (ash::khr::swapchain::Device, ash::vk::SwapchainKHR) {
   let swapchain_device = ash::khr::swapchain::Device::new(instance, device);
-  let desired_image_count = 2;
+  let physical_device_surface_capabilities = unsafe { surface_instance.get_physical_device_surface_capabilities(*physical_device, *surface).expect("failed to get physical device surface capabilities") };
+  let max_images = physical_device_surface_capabilities.min_image_count;
+  let desired_image_count = max_images;
   let color_space = ash::vk::ColorSpaceKHR::SRGB_NONLINEAR;
   let image_format = ash::vk::Format::R8G8B8A8_UNORM;
   let pre_transform = ash::vk::SurfaceTransformFlagsKHR::IDENTITY;
