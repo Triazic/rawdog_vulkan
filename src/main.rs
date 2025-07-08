@@ -28,8 +28,9 @@ fn main() {
   let memory_kind = constants::MemoryKind::Image1;
   let memory_kind_flags = memory::get_memory_flags_raw(&memory::get_memory_flags_from_kind(memory_kind));
 
-  // allocate the buffer
+  // allocate the image
   let (image, extent, image_format) = create_image(&device, queue_family_index);
+  set_object_name(&instance, &device, image, "working image");
   let requirements = get_image_memory_requirements(&device, &image);
   let memory_type_bits = requirements.memory_type_bits;
   let memory_type_index = 
@@ -42,19 +43,17 @@ fn main() {
   // map the memory so the CPU can consume it
   let mapped_memory = map_memory(&device, &memory_allocation);
 
-  // populate the image
+  // populate the host visible image
   let rgbw_bytes = get_rgbw_bytes();
   let image_layout = get_image_layout(&device, image);
   write_bytes(mapped_memory, &rgbw_bytes, &image_layout, &extent);
+  print_image(mapped_memory, &image_layout, &extent, &image_format);
 
   // queue
   let queue = get_queue(&device, queue_family_index, queue_index);
 
   // command pool
   let command_pool = create_command_pool(&device, queue_family_index);
-
-  // command buffer
-  let command_buffer = create_command_buffer(&device, &command_pool);
 
   // make a surface
   let surface_instance = create_surface_instance(&entry, &instance);
@@ -66,19 +65,13 @@ fn main() {
   // get swapchain images
   let swapchain_images = get_swapchain_images(&swapchain_device, &swapchain);
   let (next_swapchain_image, next_swapchain_image_index) = get_next_swapchain_image(&device, &swapchain_device, &swapchain, &swapchain_images);
+  set_object_name(&instance, &device, *next_swapchain_image, "swapchain image");
 
-  // recording
-  record_command_buffer_image(&device, &command_buffer, &next_swapchain_image);
+  // prepare swapchain image for presentation
+  transition_swapchain_image_to_present_mode(&device, &command_pool, &next_swapchain_image, &queue);
 
-  // submit
-  let fence = submit(&device, &queue, &command_buffer);
-
-  // await for fence
-  let timeout_ms = 16;
-  let timeout_ns = timeout_ms * 1000 * 1000;
-  unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
-
-  print_image(mapped_memory, &image_layout, &extent, &image_format);
+  // copy the image to the swapchain image
+  copy_image_to_swapchain_image(&device, &command_pool, &next_swapchain_image, &queue, &image, &extent);
 
   // present the image
   present_image(&swapchain_device, &queue, &swapchain, next_swapchain_image_index);
@@ -86,8 +79,6 @@ fn main() {
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { swapchain_device.destroy_swapchain(swapchain, None); }
   unsafe { surface_instance.destroy_surface(surface, None); }
-  unsafe { device.destroy_fence(fence, None); }
-  unsafe { device.free_command_buffers(command_pool, &[command_buffer]); }
   unsafe { device.destroy_command_pool(command_pool, None); }
   unsafe { device.free_memory(memory_allocation, None); }
   unsafe { device.destroy_image(image, None); }
@@ -448,31 +439,32 @@ fn record_command_buffer_buffer(device: &ash::Device, command_buffer: &ash::vk::
   };
 }
 
-fn record_command_buffer_image(device: &ash::Device, command_buffer: &ash::vk::CommandBuffer, image: &ash::vk::Image) -> () {
+fn transition_swapchain_image_to_present_mode(device: &ash::Device, command_pool: &ash::vk::CommandPool, swapchain_image: &ash::vk::Image, queue: &ash::vk::Queue) -> () {
+  let command_buffer = create_command_buffer(&device, &command_pool);
   let begin_flags = ash::vk::CommandBufferUsageFlags::default();
   let begin_create_info = ash::vk::CommandBufferBeginInfo::default()
     .flags(begin_flags);
   unsafe { 
     device
-    .begin_command_buffer(*command_buffer, &begin_create_info)
+    .begin_command_buffer(command_buffer, &begin_create_info)
     .expect("failed to begin command buffer");
 
-  let image_memory_barrier = ash::vk::ImageMemoryBarrier::default()
-    .old_layout(ash::vk::ImageLayout::UNDEFINED)
-    .new_layout(ash::vk::ImageLayout::PRESENT_SRC_KHR)
-    .src_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
-    .dst_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
-    .image(*image)
-    .subresource_range(ash::vk::ImageSubresourceRange::default()
-      .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-      .base_mip_level(0)
-      .level_count(1)
-      .base_array_layer(0)
-      .layer_count(1)
+    let image_memory_barrier = ash::vk::ImageMemoryBarrier::default()
+      .old_layout(ash::vk::ImageLayout::UNDEFINED)
+      .new_layout(ash::vk::ImageLayout::PRESENT_SRC_KHR)
+      .src_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
+      .dst_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
+      .image(*swapchain_image)
+      .subresource_range(ash::vk::ImageSubresourceRange::default()
+        .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+        .base_mip_level(0)
+        .level_count(1)
+        .base_array_layer(0)
+        .layer_count(1)
     );
 
     device.cmd_pipeline_barrier(
-      *command_buffer, 
+      command_buffer, 
       ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT, 
       ash::vk::PipelineStageFlags::BOTTOM_OF_PIPE, 
       ash::vk::DependencyFlags::empty(), 
@@ -482,9 +474,71 @@ fn record_command_buffer_image(device: &ash::Device, command_buffer: &ash::vk::C
     );
 
     device
-    .end_command_buffer(*command_buffer)
+    .end_command_buffer(command_buffer)
     .expect("failed to end command buffer");
   };
+
+  // submit
+  let fence = submit(&device, &queue, &command_buffer);
+
+  // await for fence
+  let timeout_ms = 16;
+  let timeout_ns = timeout_ms * 1000 * 1000;
+  unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
+  unsafe { device.destroy_fence(fence, None); }
+  unsafe { device.free_command_buffers(*command_pool, &[command_buffer]); }
+}
+
+fn copy_image_to_swapchain_image(device: &ash::Device, command_pool: &ash::vk::CommandPool, swapchain_image: &ash::vk::Image, queue: &ash::vk::Queue, image: &ash::vk::Image, extent: &ash::vk::Extent3D) -> () {
+  let command_buffer = create_command_buffer(&device, &command_pool);
+  let begin_flags = ash::vk::CommandBufferUsageFlags::default();
+  let begin_create_info = ash::vk::CommandBufferBeginInfo::default()
+    .flags(begin_flags);
+  unsafe { 
+    device
+    .begin_command_buffer(command_buffer, &begin_create_info)
+    .expect("failed to begin command buffer");
+
+    let src_image = image;
+    let dst_image = swapchain_image;
+    let src_image_layout = ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
+    let dst_image_layout = ash::vk::ImageLayout::PRESENT_SRC_KHR;
+    let region = ash::vk::ImageCopy::default()
+      .src_subresource(ash::vk::ImageSubresourceLayers::default()
+        .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+        .mip_level(0)
+        .base_array_layer(0)
+        .layer_count(1)
+      )
+      .dst_subresource(ash::vk::ImageSubresourceLayers::default()
+        .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+        .mip_level(0)
+        .base_array_layer(0)
+        .layer_count(1)
+      )
+      .extent(ash::vk::Extent3D::default()
+        .width(extent.width)
+        .height(extent.height)
+        .depth(1)
+      );
+    let regions = [region];
+
+    device.cmd_copy_image(command_buffer, *src_image, src_image_layout, *dst_image, dst_image_layout, &regions);
+
+    device
+    .end_command_buffer(command_buffer)
+    .expect("failed to end command buffer");
+  };
+
+  // submit
+  let fence = submit(&device, &queue, &command_buffer);
+
+  // await for fence
+  let timeout_ms = 16;
+  let timeout_ns = timeout_ms * 1000 * 1000;
+  unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
+  unsafe { device.destroy_fence(fence, None); }
+  unsafe { device.free_command_buffers(*command_pool, &[command_buffer]); }
 }
 
 fn submit(device: &ash::Device, queue: &ash::vk::Queue, command_buffer: &ash::vk::CommandBuffer) -> ash::vk::Fence {
@@ -619,7 +673,7 @@ fn create_swapchain(instance: &ash::Instance, physical_device: &ash::vk::Physica
   let max_images = physical_device_surface_capabilities.min_image_count;
   let desired_image_count = max_images;
   let supported_usage_flags = physical_device_surface_capabilities.supported_usage_flags;
-  let usage_flags = ash::vk::ImageUsageFlags::COLOR_ATTACHMENT;
+  let usage_flags = ash::vk::ImageUsageFlags::COLOR_ATTACHMENT | ash::vk::ImageUsageFlags::TRANSFER_DST;
   assert!(usage_flags & supported_usage_flags == usage_flags, "at least one image usage flag is not supported");
   let color_space = ash::vk::ColorSpaceKHR::SRGB_NONLINEAR;
   let image_format = ash::vk::Format::R8G8B8A8_UNORM;
@@ -675,5 +729,27 @@ fn present_image(
 
   unsafe {
     swapchain_device.queue_present(*present_queue, &present_info).expect("Failed to present swapchain image");
+  }
+}
+
+fn set_object_name<T: ash::vk::Handle>(
+  instance: &ash::Instance,
+  device: &ash::Device,
+  object_handle: T,
+  name: &str,
+) {
+  use ash::vk;
+  use std::ffi::CString;
+
+  let debug_utils_loader = ash::ext::debug_utils::Device::new(&instance, &device);
+  let name_cstr = CString::new(name).unwrap();
+  let name_info = ash::vk::DebugUtilsObjectNameInfoEXT::default()
+    .object_handle(object_handle)
+    .object_name(&name_cstr)
+    ;
+  unsafe {
+    debug_utils_loader
+      .set_debug_utils_object_name(&name_info)
+      .expect("Failed to set Vulkan object name");
   }
 }
