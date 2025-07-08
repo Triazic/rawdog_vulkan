@@ -80,6 +80,25 @@ fn main() {
   // present the image
   present_image(&swapchain_device, &queue, &swapchain, next_swapchain_image_index);
 
+  use winit::{
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+  };
+  event_loop.run(|event, window_target| {
+    window_target.set_control_flow(ControlFlow::Wait);
+
+    match event {
+      Event::WindowEvent {
+          event: WindowEvent::CloseRequested,
+          ..
+      } => {
+        window_target.exit();
+      }
+      _ => {}
+    }
+  }).expect("event loop failed");
+
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { swapchain_device.destroy_swapchain(swapchain, None); }
   unsafe { surface_instance.destroy_surface(surface, None); }
