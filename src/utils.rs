@@ -4,6 +4,14 @@ pub fn cstr(str: &str) -> CString {
   CString::new(str).expect(format!("Could not create CString from {}", str).as_str())
 }
 
+pub fn ptr_to_str(ptr: &*const i8) -> &str {
+  unsafe {
+    CStr::from_ptr(*ptr)
+      .to_str()
+      .expect("Invalid UTF-8 string")
+  }
+}
+
 pub fn split_bits(n: u32) -> Vec<u32> {
   (0..32).rev()
     .map(|i| {

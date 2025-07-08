@@ -11,9 +11,12 @@ use utils::{cstr};
 use crate::{memory::{print_flags, split_flags, split_flags_u32}, utils::print_endianness};
 
 fn main() {
+  // make window
+  let display_handle = None;
+
   // make entry, instance, device
   let entry = create_entry();
-  let instance = create_instance(&entry);
+  let instance = create_instance(&entry, display_handle);
   let (physical_device, device, queue_family_index) = create_device(&instance);
   let queue_index = 0; // only one queue for now
 
@@ -62,6 +65,9 @@ fn main() {
 
   print_image(mapped_memory, &image_layout, &extent, &image_format);
 
+  // make a surface
+  let surface = ash::khr::surface::Instance::new(&entry, &instance);
+
   unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { device.destroy_fence(fence, None); }
   unsafe { device.free_command_buffers(command_pool, &[command_buffer]); }
@@ -78,7 +84,7 @@ fn create_entry() -> ash::Entry {
   entry
 }
 
-fn create_instance(entry: &ash::Entry) -> ash::Instance {
+fn create_instance(entry: &ash::Entry, display_handle: Option<raw_window_handle::RawDisplayHandle>) -> ash::Instance {
   // application info
   let application_name = cstr("My Application");
   let application_version = 1;
@@ -113,6 +119,19 @@ fn create_instance(entry: &ash::Entry) -> ash::Instance {
     assert!(has, "instance extension {} is not supported", extension_name);
   };
   constants::REQUIRED_INSTANCE_EXTENSIONS.iter().for_each(|extension| assert_extension_supported(extension));
+
+  // ash window instance extensions
+  match display_handle {
+    Some(display_handle) => {
+      let ash_window_instance_extensions = ash_window::enumerate_required_extensions(display_handle).expect("failed to enumerate ash window required extensions");
+      ash_window_instance_extensions.iter().for_each(|extension| {
+        let weird_extension_name = extension;
+        let extension_name_as_str = utils::ptr_to_str(weird_extension_name);
+        assert_extension_supported(extension_name_as_str)
+      });
+    },
+    None => {}
+  }
 
   // instance create info
   let flags = ash::vk::InstanceCreateFlags::empty();
