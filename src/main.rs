@@ -9,18 +9,26 @@ extern crate strum;
 use itertools::Itertools;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use utils::{cstr};
-use winit::dpi::LogicalPosition;
+use winit::{dpi::LogicalPosition, event::ElementState};
 use crate::{memory::{print_flags, split_flags, split_flags_u32}, utils::print_endianness};
 
 fn main() {
+  let (image_bytes, image_width, image_height) = get_garfield_bytes();
+  let extent = 
+    ash::vk::Extent3D::default()
+    .width(image_width)
+    .height(image_height)
+    .depth(1);
+
   // make window
   let event_loop = winit::event_loop::EventLoop::new().expect("failed to create event loop");
   let window = winit::window::WindowBuilder::new()
-    .with_inner_size(winit::dpi::LogicalSize::new(200.0, 200.0))
+    .with_inner_size(winit::dpi::LogicalSize::new(image_width, image_height))
     .with_active(true)
-    .with_resizable(true)
+    .with_resizable(false)
     .with_decorations(true)
     .with_enabled_buttons(winit::window::WindowButtons::all())
+    .with_transparent(false)
     .with_title("some window")
     .build(&event_loop).expect("failed to create window");
   let display_handle = window.display_handle().expect("failed to get display handle");
@@ -37,7 +45,7 @@ fn main() {
   let memory_kind_flags = memory::get_memory_flags_raw(&memory::get_memory_flags_from_kind(memory_kind));
 
   // allocate the image
-  let (image, extent, image_format) = create_image(&device, queue_family_index);
+  let (image, image_format) = create_image(&device, queue_family_index, &extent);
   set_object_name(&instance, &device, image, "working image");
   let requirements = get_image_memory_requirements(&device, &image);
   let memory_type_bits = requirements.memory_type_bits;
@@ -52,9 +60,8 @@ fn main() {
   let mapped_memory = map_memory(&device, &memory_allocation);
 
   // populate the host visible image
-  let rgbw_bytes = get_rgbw_bytes();
   let image_layout = get_image_layout(&device, image);
-  write_bytes(mapped_memory, &rgbw_bytes, &image_layout, &extent);
+  write_bytes(mapped_memory, &image_bytes, &image_layout, &extent);
   print_image(mapped_memory, &image_layout, &extent, &image_format);
 
   // queue
@@ -103,6 +110,16 @@ fn main() {
       } => {
         window_target.exit();
       }
+      Event::WindowEvent { 
+        event: WindowEvent::KeyboardInput { device_id, event, is_synthetic },
+        ..
+       } => {
+        if (event.state == ElementState::Released) {
+          println!("KeyboardInput: {:?}", event);
+          window.set_resizable(!window.is_resizable());
+          window.set_decorations(!window.is_decorated());
+        }
+       }
       _ => {}
     }
   }).expect("event loop failed");
@@ -337,7 +354,7 @@ fn create_buffer(device: &ash::Device, buffer_size: u64) -> ash::vk::Buffer {
 }
 
 /// just a handle. not backed with memory
-fn create_image(device: &ash::Device, queue_family_index: u32) -> (ash::vk::Image, ash::vk::Extent3D, ash::vk::Format) {
+fn create_image(device: &ash::Device, queue_family_index: u32, extent: &ash::vk::Extent3D) -> (ash::vk::Image, ash::vk::Format) {
   let flags = ash::vk::ImageCreateFlags::empty();
   let usage = 
     ash::vk::ImageUsageFlags::TRANSFER_SRC
@@ -349,10 +366,6 @@ fn create_image(device: &ash::Device, queue_family_index: u32) -> (ash::vk::Imag
   let image_type = ash::vk::ImageType::TYPE_2D;
   let initial_layout = ash::vk::ImageLayout::UNDEFINED;
   let image_format = ash::vk::Format::R8G8B8A8_UNORM;
-  let extent = ash::vk::Extent3D::default()
-    .width(2)
-    .height(2)
-    .depth(1);
   let tiling = ash::vk::ImageTiling::LINEAR; // in prod, use OPTIMAL
   let queue_family_indices = [queue_family_index];
   let samples = ash::vk::SampleCountFlags::TYPE_1; // no multi-sampling
@@ -363,7 +376,7 @@ fn create_image(device: &ash::Device, queue_family_index: u32) -> (ash::vk::Imag
     .image_type(image_type)
     .initial_layout(initial_layout)
     .format(image_format)
-    .extent(extent)
+    .extent(*extent)
     .tiling(tiling)
     .usage(usage)
     .sharing_mode(sharing_mode)
@@ -374,7 +387,7 @@ fn create_image(device: &ash::Device, queue_family_index: u32) -> (ash::vk::Imag
     ;
 
   let image = unsafe { device.create_image(&create_info, None).expect("Could not create Vulkan image") };
-  (image, extent, image_format)
+  (image, image_format)
 }
 
 fn allocate_memory(device: &ash::Device, memory_type_index: u32, size: u64) -> ash::vk::DeviceMemory {
@@ -786,6 +799,18 @@ fn get_rgbw_bytes() -> Vec<u8> {
     .expect("failed to decode image");
   let bytes = img.into_rgba8().into_raw();
   bytes
+}
+
+fn get_garfield_bytes() -> (Vec<u8>, u32, u32) {
+  let img = 
+    image::ImageReader::open("./assets/garfield.png")
+    .expect("failed to read image")
+    .decode()
+    .expect("failed to decode image");
+  let width = img.width();
+  let height = img.height();
+  let bytes = img.into_rgba8().into_raw();
+  (bytes, width, height)
 }
 
 fn create_surface_instance(entry: &ash::Entry, instance: &ash::Instance) -> ash::khr::surface::Instance {
