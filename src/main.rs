@@ -114,11 +114,7 @@ fn main() {
         event: WindowEvent::KeyboardInput { device_id, event, is_synthetic },
         ..
        } => {
-        if (event.state == ElementState::Released) {
-          println!("KeyboardInput: {:?}", event);
-          window.set_resizable(!window.is_resizable());
-          window.set_decorations(!window.is_decorated());
-        }
+        window.request_redraw();
        }
       _ => {}
     }
