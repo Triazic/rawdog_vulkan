@@ -66,7 +66,7 @@ fn main() {
   print_image(mapped_memory, &image_layout, &extent, &image_format);
 
   // queue
-  let queue = get_queue(&device, queue_family_index, queue_index);
+  let main_queue = get_queue(&device, queue_family_index, queue_index);
 
   // command pool
   let command_pool = create_command_pool(&device, queue_family_index);
@@ -84,17 +84,17 @@ fn main() {
   set_object_name(&instance, &device, *next_swapchain_image, "swapchain image");
 
   // transition images to state appropriate for copy
-  transition_image_to_transfer_src_mode(&device, &command_pool, &image, &queue);
-  transition_swapchain_image_to_transfer_dst_mode(&device, &command_pool, &next_swapchain_image, &queue);
+  transition_image_to_transfer_src_mode(&device, &command_pool, &image, &main_queue);
+  transition_swapchain_image_to_transfer_dst_mode(&device, &command_pool, &next_swapchain_image, &main_queue);
 
   // copy the image to the swapchain image
-  copy_image_to_swapchain_image(&device, &command_pool, &next_swapchain_image, &queue, &image, &extent);
+  copy_image_to_swapchain_image(&device, &command_pool, &next_swapchain_image, &main_queue, &image, &extent);
 
   // prepare swapchain image for presentation
-  transition_swapchain_image_to_present_mode(&device, &command_pool, &next_swapchain_image, &queue);
+  transition_swapchain_image_to_present_mode(&device, &command_pool, &next_swapchain_image, &main_queue);
 
   // present the image
-  present_image(&swapchain_device, &queue, &swapchain, next_swapchain_image_index);
+  present_image(&swapchain_device, &main_queue, &swapchain, next_swapchain_image_index);
 
   use winit::{
     event::{Event, WindowEvent},
@@ -121,7 +121,6 @@ fn main() {
     }
   }).expect("event loop failed");
 
-  let main_queue = queue;
   let gfx = GFX::new(entry, instance, physical_device, device, surface, surface_instance, swapchain, swapchain_device, command_pool, queue_family_index, main_queue, display_handle.into(), window_handle.into());
   unsafe { gfx.device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { gfx.swapchain_device.destroy_swapchain(swapchain, None); }
