@@ -5,6 +5,8 @@ pub mod utils;
 pub mod constants;
 pub mod gfx;
 pub mod create_gfx;
+pub mod gfx_traits;
+use crate::gfx_traits::*;
 pub mod memory;
 extern crate itertools;
 extern crate strum;
@@ -63,7 +65,7 @@ fn main() {
   transition_swapchain_image_to_present_mode(&gfx.device, &gfx.command_pool, &next_swapchain_image, &gfx.main_queue);
 
   // present the image
-  present_image(&gfx.swapchain_device, &gfx.main_queue, &gfx.swapchain, next_swapchain_image_index);
+  present_image_2(&gfx, next_swapchain_image_index);
 
   {
     use winit::{
@@ -581,7 +583,7 @@ fn get_next_swapchain_image<'a>(device: &ash::Device, swapchain_device: &ash::kh
 
 fn present_image(
   swapchain_device: &ash::khr::swapchain::Device,
-  present_queue: &ash::vk::Queue,
+  main_queue: &ash::vk::Queue,
   swapchain: &ash::vk::SwapchainKHR,
   image_index: u32,
 ) -> () {
@@ -592,8 +594,27 @@ fn present_image(
     .image_indices(&image_indices);
 
   unsafe {
-    swapchain_device.queue_present(*present_queue, &present_info).expect("Failed to present swapchain image");
+    swapchain_device.queue_present(*main_queue, &present_info).expect("Failed to present swapchain image");
   }
+}
+
+fn present_image_2(gfx: &GFX, image_index: u32) {
+  let swapchain_device = &gfx.swapchain_device;
+  let main_queue = &gfx.main_queue;
+  let swapchain = &gfx.swapchain;
+  present_image(swapchain_device, main_queue, swapchain, image_index);
+}
+
+macro_rules! unpack {
+  ($x:ident, $($name:ident),+ $(,)?) => {
+      $(let $name = $x.$name();)+
+  };
+}
+
+fn present_image_3<T>(gfx: &T, image_index: u32)
+where T : HasSwapchainDevice + HasMainQueue + HasSwapchain {
+  unpack!(gfx, swapchain_device, main_queue, swapchain);
+  present_image(swapchain_device, main_queue, swapchain, image_index);
 }
 
 fn set_object_name<T: ash::vk::Handle>(
