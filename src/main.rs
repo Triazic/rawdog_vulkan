@@ -11,7 +11,7 @@ use itertools::Itertools;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use utils::{cstr};
 use winit::{dpi::LogicalPosition, event::ElementState};
-use crate::{memory::{print_flags, split_flags, split_flags_u32}, utils::print_endianness};
+use crate::{gfx::GFX, memory::{print_flags, split_flags, split_flags_u32}, utils::print_endianness};
 
 fn main() {
   let (image_bytes, image_width, image_height) = get_garfield_bytes();
@@ -122,7 +122,7 @@ fn main() {
   }).expect("event loop failed");
 
   let main_queue = queue;
-  let gfx = gfx::GFX::new(entry, instance, physical_device, device, surface, surface_instance, swapchain, swapchain_device, command_pool, queue_family_index, main_queue, display_handle.into(), window_handle.into());
+  let gfx = GFX::new(entry, instance, physical_device, device, surface, surface_instance, swapchain, swapchain_device, command_pool, queue_family_index, main_queue, display_handle.into(), window_handle.into());
   unsafe { gfx.device.device_wait_idle().expect("Failed to wait for device to become idle"); }
   unsafe { gfx.swapchain_device.destroy_swapchain(swapchain, None); }
   unsafe { gfx.surface_instance.destroy_surface(surface, None); }
