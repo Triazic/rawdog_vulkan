@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_variables, unused_imports, redundant_semicolons)]
+#![allow(dead_code, unused_variables, unused_imports, redundant_semicolons, unused_macros)]
 
 use std::{ffi::CString, io::Read, str::FromStr};
 pub mod utils;
@@ -599,9 +599,9 @@ fn present_image(
 }
 
 fn present_image_2(gfx: &GFX, image_index: u32) {
-  let swapchain_device = &gfx.swapchain_device;
-  let main_queue = &gfx.main_queue;
-  let swapchain = &gfx.swapchain;
+  let swapchain_device = &gfx.swapchain_device();
+  let main_queue = &gfx.main_queue();
+  let swapchain = &gfx.swapchain();
   present_image(swapchain_device, main_queue, swapchain, image_index);
 }
 
@@ -613,7 +613,9 @@ macro_rules! unpack {
 
 fn present_image_3<T>(gfx: &T, image_index: u32)
 where T : HasSwapchainDevice + HasMainQueue + HasSwapchain {
-  unpack!(gfx, swapchain_device, main_queue, swapchain);
+  let swapchain_device = gfx.swapchain_device();
+  let main_queue = gfx.main_queue();
+  let swapchain = gfx.swapchain();
   present_image(swapchain_device, main_queue, swapchain, image_index);
 }
 
