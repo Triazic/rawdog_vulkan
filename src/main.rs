@@ -3,6 +3,7 @@
 use std::{ffi::CString, io::Read, str::FromStr};
 pub mod utils;
 pub mod constants;
+pub mod gfx;
 pub mod memory;
 extern crate itertools;
 extern crate strum;
@@ -120,14 +121,16 @@ fn main() {
     }
   }).expect("event loop failed");
 
-  unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
-  unsafe { swapchain_device.destroy_swapchain(swapchain, None); }
-  unsafe { surface_instance.destroy_surface(surface, None); }
-  unsafe { device.destroy_command_pool(command_pool, None); }
-  unsafe { device.free_memory(memory_allocation, None); }
-  unsafe { device.destroy_image(image, None); }
-  unsafe { device.destroy_device(None); }
-  unsafe { instance.destroy_instance(None); }
+  let main_queue = queue;
+  let gfx = gfx::GFX::new(entry, instance, physical_device, device, surface, surface_instance, swapchain, swapchain_device, command_pool, queue_family_index, main_queue, display_handle.into(), window_handle.into());
+  unsafe { gfx.device.device_wait_idle().expect("Failed to wait for device to become idle"); }
+  unsafe { gfx.swapchain_device.destroy_swapchain(swapchain, None); }
+  unsafe { gfx.surface_instance.destroy_surface(surface, None); }
+  unsafe { gfx.device.destroy_command_pool(command_pool, None); }
+  unsafe { gfx.device.free_memory(memory_allocation, None); }
+  unsafe { gfx.device.destroy_image(image, None); }
+  unsafe { gfx.device.destroy_device(None); }
+  unsafe { gfx.instance.destroy_instance(None); }
   println!("Finished");
 }
 
