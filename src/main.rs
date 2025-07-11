@@ -3,7 +3,8 @@
 use std::{ffi::CString, io::Read, str::FromStr};
 pub mod utils;
 pub mod constants;
-pub mod gfx;
+pub mod gfx_headless;
+pub mod gfx_window;
 pub mod create_gfx;
 #[macro_use]
 pub mod macros;
@@ -14,11 +15,13 @@ use itertools::Itertools;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use utils::{cstr};
 use winit::{dpi::LogicalPosition, event::ElementState};
-use crate::{gfx::GFX, memory::{print_flags, split_flags, split_flags_u32}, utils::print_endianness};
-use gfx::*;
+use crate::{memory::{print_flags, split_flags, split_flags_u32}, utils::print_endianness};
+use gfx_headless::*;
 
 fn main() {
-  let gfx = create_gfx::create_gfx();
+  let (gfx_headless, gfx_window, event_loop) = create_gfx::create_gfx();
+  unpack!(gfx_headless, entry, instance, physical_device, device, command_pool, main_queue, main_queue_family_index);
+  unpack!(gfx_window, swapchain_device, swapchain, surface, surface_instance, window, window_handle, display_handle);
 
   let (image_bytes, image_width, image_height) = get_garfield_bytes();
   let extent = ash::vk::Extent3D::default()
@@ -27,46 +30,46 @@ fn main() {
     .depth(1);
 
   // get swapchain images
-  let swapchain_images = get_swapchain_images(&gfx.swapchain_device, &gfx.swapchain);
-  let (next_swapchain_image, next_swapchain_image_index) = get_next_swapchain_image(&gfx.device, &gfx.swapchain_device, &gfx.swapchain, &swapchain_images);
-  set_object_name(&gfx, *next_swapchain_image, "swapchain image");
+  let swapchain_images = get_swapchain_images(swapchain_device, swapchain);
+  let (next_swapchain_image, next_swapchain_image_index) = get_next_swapchain_image(device, swapchain_device, swapchain, &swapchain_images);
+  set_object_name(instance, device, *next_swapchain_image, "swapchain image");
 
   // get memory_type_index for the buffer
   let memory_kind = constants::MemoryKind::Image1;
   let memory_kind_flags = memory::get_memory_flags_raw(&memory::get_memory_flags_from_kind(memory_kind));
 
   // allocate the image
-  let (image, image_format) = create_image(&gfx.device, gfx.main_queue_family_index, &extent);
-  set_object_name(&gfx, image, "working image");
-  let requirements = get_image_memory_requirements(&gfx.device, &image);
+  let (image, image_format) = create_image(device, main_queue_family_index, &extent);
+  set_object_name(instance, device, image, "working image");
+  let requirements = get_image_memory_requirements(device, &image);
   let memory_type_bits = requirements.memory_type_bits;
   let memory_type_index = 
-    memory::get_memory_type_index_raw(&gfx.instance, &gfx.physical_device, memory_kind_flags, memory_type_bits)
+    memory::get_memory_type_index_raw(instance, physical_device, memory_kind_flags, memory_type_bits)
     .expect("no suitable memory type index found");
-  let memory_allocation = allocate_memory(&gfx.device, memory_type_index, requirements.size);
+  let memory_allocation = allocate_memory(device, memory_type_index, requirements.size);
   let offset = 0;
-  bind_image_memory(&gfx.device, &image, &memory_allocation, offset);
+  bind_image_memory(device, &image, &memory_allocation, offset);
 
   // map the memory so the CPU can consume it
-  let mapped_memory = map_memory(&gfx.device, &memory_allocation);
+  let mapped_memory = map_memory(device, &memory_allocation);
 
   // populate the host visible image
-  let image_layout = get_image_layout(&gfx.device, image);
+  let image_layout = get_image_layout(device, image);
   write_bytes(mapped_memory, &image_bytes, &image_layout, &extent);
   print_image(mapped_memory, &image_layout, &extent, &image_format);
 
   // transition images to state appropriate for copy
-  transition_image_to_transfer_src_mode(&gfx.device, &gfx.command_pool, &image, &gfx.main_queue);
-  transition_swapchain_image_to_transfer_dst_mode(&gfx.device, &gfx.command_pool, &next_swapchain_image, &gfx.main_queue);
+  transition_image_to_transfer_src_mode(device, command_pool, &image, main_queue);
+  transition_swapchain_image_to_transfer_dst_mode(device, command_pool, &next_swapchain_image, main_queue);
 
   // copy the image to the swapchain image
-  copy_image_to_swapchain_image(&gfx.device, &gfx.command_pool, &next_swapchain_image, &gfx.main_queue, &image, &extent);
+  copy_image_to_swapchain_image(device, command_pool, &next_swapchain_image, main_queue, &image, &extent);
 
   // prepare swapchain image for presentation
-  transition_swapchain_image_to_present_mode(&gfx.device, &gfx.command_pool, &next_swapchain_image, &gfx.main_queue);
+  transition_swapchain_image_to_present_mode(device, command_pool, &next_swapchain_image, main_queue);
 
   // present the image
-  present_image_2(&gfx, next_swapchain_image_index);
+  present_image(swapchain_device, main_queue, swapchain, next_swapchain_image_index);
 
   {
     use winit::{
@@ -74,7 +77,7 @@ fn main() {
       event_loop::{ControlFlow, EventLoop},
       window::WindowBuilder,
     };
-    gfx.event_loop.run(|event, window_target| {
+    event_loop.run(|event, window_target| {
       window_target.set_control_flow(ControlFlow::Poll);
   
       match event {
@@ -88,21 +91,21 @@ fn main() {
           event: WindowEvent::KeyboardInput { device_id, event, is_synthetic },
           ..
          } => {
-          gfx.window.request_redraw();
+          window.request_redraw();
          }
         _ => {}
       }
     }).expect("event loop failed");
   }
   
-  unsafe { gfx.device.device_wait_idle().expect("Failed to wait for device to become idle"); }
-  unsafe { gfx.swapchain_device.destroy_swapchain(gfx.swapchain, None); }
-  unsafe { gfx.surface_instance.destroy_surface(gfx.surface, None); }
-  unsafe { gfx.device.destroy_command_pool(gfx.command_pool, None); }
-  unsafe { gfx.device.free_memory(memory_allocation, None); }
-  unsafe { gfx.device.destroy_image(image, None); }
-  unsafe { gfx.device.destroy_device(None); }
-  unsafe { gfx.instance.destroy_instance(None); }
+  unsafe { device.device_wait_idle().expect("Failed to wait for device to become idle"); }
+  unsafe { swapchain_device.destroy_swapchain(*swapchain, None); }
+  unsafe { surface_instance.destroy_surface(*surface, None); }
+  unsafe { device.destroy_command_pool(*command_pool, None); }
+  unsafe { device.free_memory(memory_allocation, None); }
+  unsafe { device.destroy_image(image, None); }
+  unsafe { device.destroy_device(None); }
+  unsafe { instance.destroy_instance(None); }
   println!("Finished");
 }
 
@@ -599,35 +602,12 @@ fn present_image(
   }
 }
 
-fn present_image_2(gfx: &GFX, image_index: u32) {
-  let swapchain_device = &gfx.swapchain_device();
-  let main_queue = &gfx.main_queue();
-  let swapchain = &gfx.swapchain();
-  present_image(swapchain_device, main_queue, swapchain, image_index);
-}
-
-macro_rules! unpack {
-  ($x:ident, $($name:ident),+ $(,)?) => {
-      $(let $name = $x.$name();)+
-  };
-}
-
-fn present_image_3<T>(gfx: &T, image_index: u32)
-where T : HasSwapchainDevice + HasMainQueue + HasSwapchain {
-  let swapchain_device = gfx.swapchain_device();
-  let main_queue = gfx.main_queue();
-  let swapchain = gfx.swapchain();
-  present_image(swapchain_device, main_queue, swapchain, image_index);
-}
-
-fn set_object_name<T, H>(
-  gfx: &T,
+fn set_object_name<H: ash::vk::Handle>(
+  instance: &ash::Instance,
+  device: &ash::Device,
   object_handle: H,
   name: &str,
-)
-  where T: HasInstance + HasDevice, H: ash::vk::Handle
-{
-  unpack!(gfx, instance, device);
+) -> () {
   use ash::vk;
   use std::ffi::CString;
 

@@ -1,4 +1,4 @@
-use crate::{constants, gfx, memory, utils};
+use crate::{constants, gfx_window::GFXWindow, gfx_headless::GFXHeadless, memory, utils};
 use std::{ffi::CString, io::Read, str::FromStr};
 extern crate itertools;
 extern crate strum;
@@ -6,9 +6,9 @@ use itertools::Itertools;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use crate::utils::{cstr};
 use winit::{dpi::LogicalPosition, event::ElementState};
-use crate::{gfx::GFX, memory::{print_flags, split_flags, split_flags_u32}, utils::print_endianness};
+use crate::{memory::{print_flags, split_flags, split_flags_u32}, utils::print_endianness};
 
-pub fn create_gfx() -> gfx::GFX {
+pub fn create_gfx() -> (GFXHeadless, GFXWindow, winit::event_loop::EventLoop<()>) {
   let (image_bytes, image_width, image_height) = get_garfield_bytes();
   let extent = 
     ash::vk::Extent3D::default()
@@ -33,14 +33,14 @@ pub fn create_gfx() -> gfx::GFX {
   // make entry, instance, device
   let entry = create_entry();
   let instance = create_instance(&entry, display_handle.into());
-  let (physical_device, device, queue_family_index) = create_device(&entry, &instance, &display_handle.into(), &window_handle.into());
+  let (physical_device, device, main_queue_family_index) = create_device(&entry, &instance, &display_handle.into(), &window_handle.into());
   let queue_index = 0; // only one queue for now
 
   // queue
-  let main_queue = get_queue(&device, queue_family_index, queue_index);
+  let main_queue = get_queue(&device, main_queue_family_index, queue_index);
 
   // command pool
-  let command_pool = create_command_pool(&device, queue_family_index);
+  let command_pool = create_command_pool(&device, main_queue_family_index);
 
   // make a surface
   let surface_instance = create_surface_instance(&entry, &instance);
@@ -49,24 +49,26 @@ pub fn create_gfx() -> gfx::GFX {
   // make swapchain
   let (swapchain_device, swapchain) = create_swapchain(&instance, &physical_device, &device, &surface, &surface_instance, &extent);
 
-  let gfx = GFX {
+  let gfx_headless = GFXHeadless {
     entry, 
     instance, 
     physical_device, 
     device, 
     command_pool, 
-    queue_family_index, 
+    main_queue_family_index, 
     main_queue, 
+  };
+
+  let gfx_window = GFXWindow {
     surface, 
     surface_instance, 
     swapchain, 
     swapchain_device, 
     display_handle: display_handle.into(), 
     window_handle: window_handle.into(),
-    event_loop,
     window,
   };
-  gfx
+  (gfx_headless, gfx_window, event_loop)
 }
 
 fn get_garfield_bytes() -> (Vec<u8>, u32, u32) {
