@@ -27,7 +27,7 @@ fn main() {
   // get swapchain images
   let swapchain_images = get_swapchain_images(&gfx.swapchain_device, &gfx.swapchain);
   let (next_swapchain_image, next_swapchain_image_index) = get_next_swapchain_image(&gfx.device, &gfx.swapchain_device, &gfx.swapchain, &swapchain_images);
-  set_object_name(&gfx.instance, &gfx.device, *next_swapchain_image, "swapchain image");
+  set_object_name(&gfx, *next_swapchain_image, "swapchain image");
 
   // get memory_type_index for the buffer
   let memory_kind = constants::MemoryKind::Image1;
@@ -35,7 +35,7 @@ fn main() {
 
   // allocate the image
   let (image, image_format) = create_image(&gfx.device, gfx.queue_family_index, &extent);
-  set_object_name(&gfx.instance, &gfx.device, image, "working image");
+  set_object_name(&gfx, image, "working image");
   let requirements = get_image_memory_requirements(&gfx.device, &image);
   let memory_type_bits = requirements.memory_type_bits;
   let memory_type_index = 
@@ -618,12 +618,14 @@ where T : HasSwapchainDevice + HasMainQueue + HasSwapchain {
   present_image(swapchain_device, main_queue, swapchain, image_index);
 }
 
-fn set_object_name<T: ash::vk::Handle>(
-  instance: &ash::Instance,
-  device: &ash::Device,
-  object_handle: T,
+fn set_object_name<T, H>(
+  gfx: &T,
+  object_handle: H,
   name: &str,
-) {
+)
+  where T: HasInstance + HasDevice, H: ash::vk::Handle
+{
+  unpack!(gfx, instance, device);
   use ash::vk;
   use std::ffi::CString;
 

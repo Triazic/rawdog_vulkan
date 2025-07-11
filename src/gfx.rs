@@ -1,7 +1,7 @@
 use derive_new::new;
 use proc_macros::{Getters, Has};
 
-#[derive(new, Getters, Has)]
+#[derive(new, Has)]
 /// collection of vulkan stuff with an effectively 'static' lifetime
 pub struct GFX {
   // required for all contexts
