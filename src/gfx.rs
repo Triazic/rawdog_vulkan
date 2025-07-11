@@ -10,7 +10,7 @@ pub struct GFX {
   pub physical_device: ash::vk::PhysicalDevice,
   pub device: ash::Device,
   pub command_pool: ash::vk::CommandPool,
-  pub queue_family_index: u32,
+  pub main_queue_family_index: u32,
   pub main_queue: ash::vk::Queue,
 
   // required for window context

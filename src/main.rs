@@ -5,6 +5,8 @@ pub mod utils;
 pub mod constants;
 pub mod gfx;
 pub mod create_gfx;
+#[macro_use]
+pub mod macros;
 pub mod memory;
 extern crate itertools;
 extern crate strum;
@@ -34,7 +36,7 @@ fn main() {
   let memory_kind_flags = memory::get_memory_flags_raw(&memory::get_memory_flags_from_kind(memory_kind));
 
   // allocate the image
-  let (image, image_format) = create_image(&gfx.device, gfx.queue_family_index, &extent);
+  let (image, image_format) = create_image(&gfx.device, gfx.main_queue_family_index, &extent);
   set_object_name(&gfx, image, "working image");
   let requirements = get_image_memory_requirements(&gfx.device, &image);
   let memory_type_bits = requirements.memory_type_bits;
