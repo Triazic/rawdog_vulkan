@@ -31,8 +31,6 @@ fn main() {
 
   // get swapchain images
   let swapchain_images = get_swapchain_images(swapchain_device, swapchain);
-  let (next_swapchain_image, next_swapchain_image_index) = get_next_swapchain_image(device, swapchain_device, swapchain, &swapchain_images);
-  set_object_name(instance, device, *next_swapchain_image, "swapchain image");
 
   // get memory_type_index for the buffer
   let memory_kind = constants::MemoryKind::Image1;
@@ -80,16 +78,23 @@ fn main() {
 
   // transition blit and swapchain images to formats for copy
   transition_image_to_new_layout(device, command_pool, &image, main_queue, &ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL, &ash::vk::ImageLayout::TRANSFER_SRC_OPTIMAL);
-  transition_image_to_new_layout(device, command_pool, &next_swapchain_image, main_queue, &ash::vk::ImageLayout::UNDEFINED, &ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL);
 
-  // copy the image to the swapchain image
-  copy_image_to_swapchain_image(device, command_pool, &next_swapchain_image, main_queue, &image, &extent);
+  let draw = || {
+    let (next_swapchain_image, next_swapchain_image_index) = get_next_swapchain_image(device, swapchain_device, swapchain, &swapchain_images);
+    println!("draw triggered. swapchain image {}", next_swapchain_image_index);
+    set_object_name(instance, device, *next_swapchain_image, "swapchain image");
 
-  // prepare swapchain image for presentation
-  transition_image_to_new_layout(device, command_pool, &next_swapchain_image, main_queue, &ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL, &ash::vk::ImageLayout::PRESENT_SRC_KHR);
+    transition_image_to_new_layout(device, command_pool, &next_swapchain_image, main_queue, &ash::vk::ImageLayout::UNDEFINED, &ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL);
 
-  // present the image
-  present_image(swapchain_device, main_queue, swapchain, next_swapchain_image_index);
+    // copy the image to the swapchain image
+    copy_image_to_swapchain_image(device, command_pool, &next_swapchain_image, main_queue, &image, &extent);
+  
+    // prepare swapchain image for presentation
+    transition_image_to_new_layout(device, command_pool, &next_swapchain_image, main_queue, &ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL, &ash::vk::ImageLayout::PRESENT_SRC_KHR);
+    
+    // present the image
+    present_image(swapchain_device, main_queue, swapchain, next_swapchain_image_index);
+  };
 
   {
     use winit::{
@@ -99,7 +104,7 @@ fn main() {
     };
     event_loop.run(|event, window_target| {
       window_target.set_control_flow(ControlFlow::Poll);
-  
+      window.request_redraw();
       match event {
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,
@@ -111,7 +116,17 @@ fn main() {
           event: WindowEvent::KeyboardInput { device_id, event, is_synthetic },
           ..
          } => {
+          // do keyboard stuff
+        }
+        Event::Resumed => {
+          window.set_visible(true);
           window.request_redraw();
+        },
+        Event::WindowEvent { 
+          event: WindowEvent::RedrawRequested,
+          ..
+         } => {
+          draw();
          }
         _ => {}
       }

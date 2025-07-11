@@ -26,6 +26,7 @@ pub fn create_gfx() -> (GFXHeadless, GFXWindow, winit::event_loop::EventLoop<()>
     .with_enabled_buttons(winit::window::WindowButtons::all())
     .with_transparent(false)
     .with_title("some window")
+    .with_visible(false)
     .build(&event_loop).expect("failed to create window");
   let display_handle = window.display_handle().expect("failed to get display handle");
   let window_handle = window.window_handle().expect("failed to get window handle");
