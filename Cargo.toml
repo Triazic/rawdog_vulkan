@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 ash = "0.38.0"
 ash-window = "0.13.0"
-derive-getters = "0.5.0"
 derive-new = "0.7.0"
 image = "0.25.6"
 itertools = "0.14.0"
@@ -14,3 +13,4 @@ raw-window-handle = "0.6.2"
 strum = "0.27.1"
 strum_macros = "0.27.1"
 winit = "0.29.15"
+proc_macros = { path = "../derive_macros/proc_macros" }

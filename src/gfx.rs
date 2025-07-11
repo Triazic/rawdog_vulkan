@@ -1,7 +1,7 @@
 use derive_new::new;
 use crate::gfx_traits::*;
 use crate::gfx_traits::HasDevice;
-use derive_getters::{Getters};
+use proc_macros::{Getters};
 
 #[derive(new, Getters)]
 /// collection of vulkan stuff with an effectively 'static' lifetime
