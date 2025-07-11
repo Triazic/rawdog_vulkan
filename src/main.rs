@@ -58,7 +58,7 @@ fn main() {
   write_bytes(mapped_memory, &image_bytes, &image_layout, &extent);
 
   // transition raw image to TRANSFER_SRC_OPTIMAL
-  transition_image_to_transfer_src_mode(device, command_pool, &raw_image, main_queue);
+  transition_image_to_new_layout(device, command_pool, &raw_image, main_queue, &ash::vk::ImageLayout::UNDEFINED, &ash::vk::ImageLayout::TRANSFER_SRC_OPTIMAL);
 
   // make a 'new' image so we can blit onto it
   let (image, image_format) = create_image(device, main_queue_family_index, &extent, surface_format);
@@ -73,18 +73,20 @@ fn main() {
   bind_image_memory(device, &image, &memory_allocation, offset);
 
   // transition blit image to TRANSFER_DST_OPTIMAL
-  transition_image_to_transfer_dst_mode(device, command_pool, &image, main_queue);
+  transition_image_to_new_layout(device, command_pool, &image, main_queue, &ash::vk::ImageLayout::UNDEFINED, &ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL);
 
-  // transition images to state appropriate for copy
+  // blit
   copy_image_to_surface_format(device, command_pool, main_queue, &raw_image, &image, &extent);
-  transition_image_to_transfer_src_mode(device, command_pool, &image, main_queue);
-  transition_swapchain_image_to_transfer_dst_mode(device, command_pool, &next_swapchain_image, main_queue);
+
+  // transition blit and swapchain images to formats for copy
+  transition_image_to_new_layout(device, command_pool, &image, main_queue, &ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL, &ash::vk::ImageLayout::TRANSFER_SRC_OPTIMAL);
+  transition_image_to_new_layout(device, command_pool, &next_swapchain_image, main_queue, &ash::vk::ImageLayout::UNDEFINED, &ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL);
 
   // copy the image to the swapchain image
   copy_image_to_swapchain_image(device, command_pool, &next_swapchain_image, main_queue, &image, &extent);
 
   // prepare swapchain image for presentation
-  transition_swapchain_image_to_present_mode(device, command_pool, &next_swapchain_image, main_queue);
+  transition_image_to_new_layout(device, command_pool, &next_swapchain_image, main_queue, &ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL, &ash::vk::ImageLayout::PRESENT_SRC_KHR);
 
   // present the image
   present_image(swapchain_device, main_queue, swapchain, next_swapchain_image_index);
@@ -269,7 +271,7 @@ fn record_command_buffer_buffer(device: &ash::Device, command_buffer: &ash::vk::
   };
 }
 
-fn transition_swapchain_image_to_present_mode(device: &ash::Device, command_pool: &ash::vk::CommandPool, swapchain_image: &ash::vk::Image, queue: &ash::vk::Queue) -> () {
+fn transition_image_to_new_layout(device: &ash::Device, command_pool: &ash::vk::CommandPool, image: &ash::vk::Image, queue: &ash::vk::Queue, old_layout: &ash::vk::ImageLayout, new_layout: &ash::vk::ImageLayout) -> () {
   let command_buffer = create_command_buffer(&device, &command_pool);
   let begin_flags = ash::vk::CommandBufferUsageFlags::default();
   let begin_create_info = ash::vk::CommandBufferBeginInfo::default()
@@ -280,158 +282,8 @@ fn transition_swapchain_image_to_present_mode(device: &ash::Device, command_pool
     .expect("failed to begin command buffer");
 
     let image_memory_barrier = ash::vk::ImageMemoryBarrier::default()
-      .old_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-      .new_layout(ash::vk::ImageLayout::PRESENT_SRC_KHR)
-      .src_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
-      .dst_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
-      .image(*swapchain_image)
-      .subresource_range(ash::vk::ImageSubresourceRange::default()
-        .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-        .base_mip_level(0)
-        .level_count(1)
-        .base_array_layer(0)
-        .layer_count(1)
-    );
-
-    device.cmd_pipeline_barrier(
-      command_buffer, 
-      ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT, 
-      ash::vk::PipelineStageFlags::BOTTOM_OF_PIPE, 
-      ash::vk::DependencyFlags::empty(), 
-      &[], 
-      &[], 
-      &[image_memory_barrier]
-    );
-
-    device
-    .end_command_buffer(command_buffer)
-    .expect("failed to end command buffer");
-  };
-
-  // submit
-  let fence = submit(&device, &queue, &command_buffer);
-
-  // await for fence
-  let timeout_ms = 16;
-  let timeout_ns = timeout_ms * 1000 * 1000;
-  unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
-  unsafe { device.destroy_fence(fence, None); }
-  unsafe { device.free_command_buffers(*command_pool, &[command_buffer]); }
-}
-
-fn transition_swapchain_image_to_transfer_dst_mode(device: &ash::Device, command_pool: &ash::vk::CommandPool, swapchain_image: &ash::vk::Image, queue: &ash::vk::Queue) -> () {
-  let command_buffer = create_command_buffer(&device, &command_pool);
-  let begin_flags = ash::vk::CommandBufferUsageFlags::default();
-  let begin_create_info = ash::vk::CommandBufferBeginInfo::default()
-    .flags(begin_flags);
-  unsafe { 
-    device
-    .begin_command_buffer(command_buffer, &begin_create_info)
-    .expect("failed to begin command buffer");
-
-    let image_memory_barrier = ash::vk::ImageMemoryBarrier::default()
-      .old_layout(ash::vk::ImageLayout::UNDEFINED)
-      .new_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-      .src_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
-      .dst_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
-      .image(*swapchain_image)
-      .subresource_range(ash::vk::ImageSubresourceRange::default()
-        .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-        .base_mip_level(0)
-        .level_count(1)
-        .base_array_layer(0)
-        .layer_count(1)
-    );
-
-    device.cmd_pipeline_barrier(
-      command_buffer, 
-      ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT, 
-      ash::vk::PipelineStageFlags::BOTTOM_OF_PIPE, 
-      ash::vk::DependencyFlags::empty(), 
-      &[], 
-      &[], 
-      &[image_memory_barrier]
-    );
-
-    device
-    .end_command_buffer(command_buffer)
-    .expect("failed to end command buffer");
-  };
-
-  // submit
-  let fence = submit(&device, &queue, &command_buffer);
-
-  // await for fence
-  let timeout_ms = 16;
-  let timeout_ns = timeout_ms * 1000 * 1000;
-  unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
-  unsafe { device.destroy_fence(fence, None); }
-  unsafe { device.free_command_buffers(*command_pool, &[command_buffer]); }
-}
-
-fn transition_image_to_transfer_src_mode(device: &ash::Device, command_pool: &ash::vk::CommandPool, image: &ash::vk::Image, queue: &ash::vk::Queue) -> () {
-  let command_buffer = create_command_buffer(&device, &command_pool);
-  let begin_flags = ash::vk::CommandBufferUsageFlags::default();
-  let begin_create_info = ash::vk::CommandBufferBeginInfo::default()
-    .flags(begin_flags);
-  unsafe { 
-    device
-    .begin_command_buffer(command_buffer, &begin_create_info)
-    .expect("failed to begin command buffer");
-
-    let image_memory_barrier = ash::vk::ImageMemoryBarrier::default()
-      .old_layout(ash::vk::ImageLayout::UNDEFINED)
-      .new_layout(ash::vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-      .src_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
-      .dst_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
-      .image(*image)
-      .subresource_range(ash::vk::ImageSubresourceRange::default()
-        .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
-        .base_mip_level(0)
-        .level_count(1)
-        .base_array_layer(0)
-        .layer_count(1)
-    );
-
-    device.cmd_pipeline_barrier(
-      command_buffer, 
-      ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT, 
-      ash::vk::PipelineStageFlags::BOTTOM_OF_PIPE, 
-      ash::vk::DependencyFlags::empty(), 
-      &[], 
-      &[], 
-      &[image_memory_barrier]
-    );
-
-    device
-    .end_command_buffer(command_buffer)
-    .expect("failed to end command buffer");
-  };
-
-  // submit
-  let fence = submit(&device, &queue, &command_buffer);
-
-  // await for fence
-  let timeout_ms = 16;
-  let timeout_ns = timeout_ms * 1000 * 1000;
-  unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
-  unsafe { device.destroy_fence(fence, None); }
-  unsafe { device.free_command_buffers(*command_pool, &[command_buffer]); }
-}
-
-fn transition_image_to_transfer_dst_mode(device: &ash::Device, command_pool: &ash::vk::CommandPool, image: &ash::vk::Image, queue: &ash::vk::Queue) -> () {
-  let command_buffer = create_command_buffer(&device, &command_pool);
-  let begin_flags = ash::vk::CommandBufferUsageFlags::default();
-  let begin_create_info = ash::vk::CommandBufferBeginInfo::default()
-    .flags(begin_flags);
-  unsafe { 
-    device
-    .begin_command_buffer(command_buffer, &begin_create_info)
-    .expect("failed to begin command buffer");
-
-    let image_memory_barrier = ash::vk::ImageMemoryBarrier::default()
-      .old_layout(ash::vk::ImageLayout::UNDEFINED)
-      .new_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+      .old_layout(*old_layout)
+      .new_layout(*new_layout)
       .src_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
       .dst_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
       .image(*image)
