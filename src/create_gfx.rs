@@ -1,4 +1,4 @@
-use crate::{constants, gfx_window::GFXWindow, gfx_headless::GFXHeadless, memory, utils};
+use crate::{constants, get_supported_surface_formats, get_target_surface_format, gfx_headless::GFXHeadless, gfx_window::GFXWindow, memory, utils};
 use std::{ffi::CString, io::Read, str::FromStr};
 extern crate itertools;
 extern crate strum;
@@ -47,7 +47,8 @@ pub fn create_gfx() -> (GFXHeadless, GFXWindow, winit::event_loop::EventLoop<()>
   let surface = create_surface(&entry, &instance, &display_handle.into(), &window_handle.into());
 
   // make swapchain
-  let (swapchain_device, swapchain) = create_swapchain(&instance, &physical_device, &device, &surface, &surface_instance, &extent);
+  let surface_format = get_target_surface_format(&physical_device, &surface_instance, &surface);
+  let (swapchain_device, swapchain) = create_swapchain(&instance, &physical_device, &device, &surface, &surface_instance, &extent, &surface_format);
 
   let gfx_headless = GFXHeadless {
     entry, 
@@ -67,6 +68,7 @@ pub fn create_gfx() -> (GFXHeadless, GFXWindow, winit::event_loop::EventLoop<()>
     display_handle: display_handle.into(), 
     window_handle: window_handle.into(),
     window,
+    surface_format
   };
   (gfx_headless, gfx_window, event_loop)
 }
@@ -311,7 +313,7 @@ fn create_surface(entry: &ash::Entry, instance: &ash::Instance, display_handle: 
   surface
 }
 
-fn create_swapchain(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice, device: &ash::Device, surface: &ash::vk::SurfaceKHR, surface_instance: &ash::khr::surface::Instance, extent: &ash::vk::Extent3D) -> (ash::khr::swapchain::Device, ash::vk::SwapchainKHR) {
+fn create_swapchain(instance: &ash::Instance, physical_device: &ash::vk::PhysicalDevice, device: &ash::Device, surface: &ash::vk::SurfaceKHR, surface_instance: &ash::khr::surface::Instance, extent: &ash::vk::Extent3D, surface_format: &ash::vk::Format) -> (ash::khr::swapchain::Device, ash::vk::SwapchainKHR) {
   let swapchain_device = ash::khr::swapchain::Device::new(instance, device);
   let physical_device_surface_capabilities = unsafe { surface_instance.get_physical_device_surface_capabilities(*physical_device, *surface).expect("failed to get physical device surface capabilities") };
   let max_images = physical_device_surface_capabilities.min_image_count;
@@ -320,7 +322,6 @@ fn create_swapchain(instance: &ash::Instance, physical_device: &ash::vk::Physica
   let usage_flags = ash::vk::ImageUsageFlags::COLOR_ATTACHMENT | ash::vk::ImageUsageFlags::TRANSFER_DST;
   assert!(usage_flags & supported_usage_flags == usage_flags, "at least one image usage flag is not supported");
   let color_space = ash::vk::ColorSpaceKHR::SRGB_NONLINEAR;
-  let image_format = ash::vk::Format::R8G8B8A8_UNORM;
   let pre_transform = ash::vk::SurfaceTransformFlagsKHR::IDENTITY;
   let present_mode = ash::vk::PresentModeKHR::MAILBOX;
   let extent = ash::vk::Extent2D::default().width(extent.width).height(extent.height);
@@ -329,7 +330,7 @@ fn create_swapchain(instance: &ash::Instance, physical_device: &ash::vk::Physica
     .surface(*surface)
     .min_image_count(desired_image_count)
     .image_color_space(color_space)
-    .image_format(image_format)
+    .image_format(*surface_format)
     .image_extent(extent)
     .image_usage(usage_flags)
     .image_sharing_mode(ash::vk::SharingMode::EXCLUSIVE)

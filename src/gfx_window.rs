@@ -11,4 +11,5 @@ pub struct GFXWindow {
   pub display_handle: raw_window_handle::RawDisplayHandle,
   pub window_handle: raw_window_handle::RawWindowHandle,
   pub window: winit::window::Window,
+  pub surface_format: ash::vk::Format,
 }

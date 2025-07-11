@@ -21,7 +21,7 @@ use gfx_headless::*;
 fn main() {
   let (gfx_headless, gfx_window, event_loop) = create_gfx::create_gfx();
   unpack!(gfx_headless, entry, instance, physical_device, device, command_pool, main_queue, main_queue_family_index);
-  unpack!(gfx_window, swapchain_device, swapchain, surface, surface_instance, window, window_handle, display_handle);
+  unpack!(gfx_window, swapchain_device, swapchain, surface, surface_instance, window, window_handle, display_handle, surface_format);
 
   let (image_bytes, image_width, image_height) = get_garfield_bytes();
   let extent = ash::vk::Extent3D::default()
@@ -38,27 +38,45 @@ fn main() {
   let memory_kind = constants::MemoryKind::Image1;
   let memory_kind_flags = memory::get_memory_flags_raw(&memory::get_memory_flags_from_kind(memory_kind));
 
-  // allocate the image
-  let (image, image_format) = create_image(device, main_queue_family_index, &extent);
-  set_object_name(instance, device, image, "working image");
-  let requirements = get_image_memory_requirements(device, &image);
+  // allocate the raw image
+  let (raw_image, raw_image_format) = create_image(device, main_queue_family_index, &extent, &ash::vk::Format::R8G8B8A8_UNORM);
+  set_object_name(instance, device, raw_image, "raw image");
+  let requirements = get_image_memory_requirements(device, &raw_image);
   let memory_type_bits = requirements.memory_type_bits;
   let memory_type_index = 
     memory::get_memory_type_index_raw(instance, physical_device, memory_kind_flags, memory_type_bits)
     .expect("no suitable memory type index found");
   let memory_allocation = allocate_memory(device, memory_type_index, requirements.size);
   let offset = 0;
-  bind_image_memory(device, &image, &memory_allocation, offset);
+  bind_image_memory(device, &raw_image, &memory_allocation, offset);
 
   // map the memory so the CPU can consume it
   let mapped_memory = map_memory(device, &memory_allocation);
 
   // populate the host visible image
-  let image_layout = get_image_layout(device, image);
+  let image_layout = get_image_layout(device, raw_image);
   write_bytes(mapped_memory, &image_bytes, &image_layout, &extent);
-  print_image(mapped_memory, &image_layout, &extent, &image_format);
+
+  // transition raw image to TRANSFER_SRC_OPTIMAL
+  transition_image_to_transfer_src_mode(device, command_pool, &raw_image, main_queue);
+
+  // make a 'new' image so we can blit onto it
+  let (image, image_format) = create_image(device, main_queue_family_index, &extent, surface_format);
+  set_object_name(instance, device, image, "blit image");
+  let requirements = get_image_memory_requirements(device, &image);
+  let memory_type_bits = requirements.memory_type_bits;
+  let memory_type_index = 
+    memory::get_memory_type_index_raw(instance, physical_device, memory_kind_flags, memory_type_bits)
+    .expect("no suitable memory type index found");
+  let memory_allocation_2 = allocate_memory(device, memory_type_index, requirements.size);
+  let offset = 0;
+  bind_image_memory(device, &image, &memory_allocation, offset);
+
+  // transition blit image to TRANSFER_DST_OPTIMAL
+  transition_image_to_transfer_dst_mode(device, command_pool, &image, main_queue);
 
   // transition images to state appropriate for copy
+  copy_image_to_surface_format(device, command_pool, main_queue, &raw_image, &image, &extent);
   transition_image_to_transfer_src_mode(device, command_pool, &image, main_queue);
   transition_swapchain_image_to_transfer_dst_mode(device, command_pool, &next_swapchain_image, main_queue);
 
@@ -103,6 +121,7 @@ fn main() {
   unsafe { surface_instance.destroy_surface(*surface, None); }
   unsafe { device.destroy_command_pool(*command_pool, None); }
   unsafe { device.free_memory(memory_allocation, None); }
+  unsafe { device.free_memory(memory_allocation_2, None); }
   unsafe { device.destroy_image(image, None); }
   unsafe { device.destroy_device(None); }
   unsafe { instance.destroy_instance(None); }
@@ -137,7 +156,7 @@ fn create_buffer(device: &ash::Device, buffer_size: u64) -> ash::vk::Buffer {
 }
 
 /// just a handle. not backed with memory
-fn create_image(device: &ash::Device, queue_family_index: u32, extent: &ash::vk::Extent3D) -> (ash::vk::Image, ash::vk::Format) {
+fn create_image(device: &ash::Device, queue_family_index: u32, extent: &ash::vk::Extent3D, image_format: &ash::vk::Format) -> (ash::vk::Image, ash::vk::Format) {
   let flags = ash::vk::ImageCreateFlags::empty();
   let usage = 
     ash::vk::ImageUsageFlags::TRANSFER_SRC
@@ -148,7 +167,6 @@ fn create_image(device: &ash::Device, queue_family_index: u32, extent: &ash::vk:
   let sharing_mode = ash::vk::SharingMode::EXCLUSIVE; // used in one queue
   let image_type = ash::vk::ImageType::TYPE_2D;
   let initial_layout = ash::vk::ImageLayout::UNDEFINED;
-  let image_format = ash::vk::Format::R8G8B8A8_UNORM;
   let tiling = ash::vk::ImageTiling::LINEAR; // in prod, use OPTIMAL
   let queue_family_indices = [queue_family_index];
   let samples = ash::vk::SampleCountFlags::TYPE_1; // no multi-sampling
@@ -158,7 +176,7 @@ fn create_image(device: &ash::Device, queue_family_index: u32, extent: &ash::vk:
     .flags(flags) 
     .image_type(image_type)
     .initial_layout(initial_layout)
-    .format(image_format)
+    .format(*image_format)
     .extent(*extent)
     .tiling(tiling)
     .usage(usage)
@@ -170,7 +188,7 @@ fn create_image(device: &ash::Device, queue_family_index: u32, extent: &ash::vk:
     ;
 
   let image = unsafe { device.create_image(&create_info, None).expect("Could not create Vulkan image") };
-  (image, image_format)
+  (image, *image_format)
 }
 
 fn allocate_memory(device: &ash::Device, memory_type_index: u32, size: u64) -> ash::vk::DeviceMemory {
@@ -384,6 +402,107 @@ fn transition_image_to_transfer_src_mode(device: &ash::Device, command_pool: &as
       &[], 
       &[image_memory_barrier]
     );
+
+    device
+    .end_command_buffer(command_buffer)
+    .expect("failed to end command buffer");
+  };
+
+  // submit
+  let fence = submit(&device, &queue, &command_buffer);
+
+  // await for fence
+  let timeout_ms = 16;
+  let timeout_ns = timeout_ms * 1000 * 1000;
+  unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
+  unsafe { device.destroy_fence(fence, None); }
+  unsafe { device.free_command_buffers(*command_pool, &[command_buffer]); }
+}
+
+fn transition_image_to_transfer_dst_mode(device: &ash::Device, command_pool: &ash::vk::CommandPool, image: &ash::vk::Image, queue: &ash::vk::Queue) -> () {
+  let command_buffer = create_command_buffer(&device, &command_pool);
+  let begin_flags = ash::vk::CommandBufferUsageFlags::default();
+  let begin_create_info = ash::vk::CommandBufferBeginInfo::default()
+    .flags(begin_flags);
+  unsafe { 
+    device
+    .begin_command_buffer(command_buffer, &begin_create_info)
+    .expect("failed to begin command buffer");
+
+    let image_memory_barrier = ash::vk::ImageMemoryBarrier::default()
+      .old_layout(ash::vk::ImageLayout::UNDEFINED)
+      .new_layout(ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+      .src_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
+      .dst_queue_family_index(ash::vk::QUEUE_FAMILY_IGNORED)
+      .image(*image)
+      .subresource_range(ash::vk::ImageSubresourceRange::default()
+        .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+        .base_mip_level(0)
+        .level_count(1)
+        .base_array_layer(0)
+        .layer_count(1)
+    );
+
+    device.cmd_pipeline_barrier(
+      command_buffer, 
+      ash::vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT, 
+      ash::vk::PipelineStageFlags::BOTTOM_OF_PIPE, 
+      ash::vk::DependencyFlags::empty(), 
+      &[], 
+      &[], 
+      &[image_memory_barrier]
+    );
+
+    device
+    .end_command_buffer(command_buffer)
+    .expect("failed to end command buffer");
+  };
+
+  // submit
+  let fence = submit(&device, &queue, &command_buffer);
+
+  // await for fence
+  let timeout_ms = 16;
+  let timeout_ns = timeout_ms * 1000 * 1000;
+  unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
+  unsafe { device.destroy_fence(fence, None); }
+  unsafe { device.free_command_buffers(*command_pool, &[command_buffer]); }
+}
+
+fn copy_image_to_surface_format(device: &ash::Device, command_pool: &ash::vk::CommandPool, queue: &ash::vk::Queue, src_image: &ash::vk::Image, dst_image: &ash::vk::Image, extent: &ash::vk::Extent3D) -> () {
+  let command_buffer = create_command_buffer(&device, &command_pool);
+  let begin_flags = ash::vk::CommandBufferUsageFlags::default();
+  let begin_create_info = ash::vk::CommandBufferBeginInfo::default()
+    .flags(begin_flags);
+  unsafe { 
+    device
+    .begin_command_buffer(command_buffer, &begin_create_info)
+    .expect("failed to begin command buffer");
+
+    let src_image_layout = ash::vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
+    let dst_image_layout = ash::vk::ImageLayout::TRANSFER_DST_OPTIMAL;
+    let src_subresource = ash::vk::ImageSubresourceLayers::default()
+      .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+      .mip_level(0)
+      .base_array_layer(0)
+      .layer_count(1)
+    ;
+    let dst_subresource = ash::vk::ImageSubresourceLayers::default()
+      .aspect_mask(ash::vk::ImageAspectFlags::COLOR)
+      .mip_level(0)
+      .base_array_layer(0)
+      .layer_count(1)
+    ;
+    let region = 
+      ash::vk::ImageBlit::default()
+      .src_offsets([ash::vk::Offset3D::default().x(0).y(0).z(0), ash::vk::Offset3D::default().x(extent.width as i32).y(extent.height as i32).z(extent.depth as i32)])
+      .dst_offsets([ash::vk::Offset3D::default().x(0).y(0).z(0), ash::vk::Offset3D::default().x(extent.width as i32).y(extent.height as i32).z(extent.depth as i32)])
+      .src_subresource(src_subresource)
+      .dst_subresource(dst_subresource)    
+    ;
+    let regions = [region];
+    let filter = ash::vk::Filter::LINEAR;
+    device.cmd_blit_image(command_buffer, *src_image, src_image_layout, *dst_image, dst_image_layout, &regions, filter);
 
     device
     .end_command_buffer(command_buffer)
@@ -622,4 +741,20 @@ fn set_object_name<H: ash::vk::Handle>(
       .set_debug_utils_object_name(&name_info)
       .expect("Failed to set Vulkan object name");
   }
+}
+
+fn get_supported_surface_formats(physical_device: &ash::vk::PhysicalDevice, surface_instance: &ash::khr::surface::Instance, surface: &ash::vk::SurfaceKHR) -> Vec<ash::vk::SurfaceFormatKHR> {
+  let formats = unsafe { surface_instance.get_physical_device_surface_formats(*physical_device, *surface).expect("failed to get supported surface formats") };
+  formats
+}
+
+fn get_target_surface_format(physical_device: &ash::vk::PhysicalDevice, surface_instance: &ash::khr::surface::Instance, surface: &ash::vk::SurfaceKHR) -> ash::vk::Format {
+  let formats = get_supported_surface_formats(physical_device, surface_instance, surface);
+  let preferences = [ash::vk::Format::R8G8B8A8_UNORM, ash::vk::Format::B8G8R8A8_UNORM];
+  let first_preference = preferences.iter().find(|preference| {
+    formats.iter().any(|format| {
+      format.format == **preference
+    })
+  }).expect("failed to find any good surface formats");
+  return *first_preference;
 }
