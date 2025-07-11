@@ -330,7 +330,7 @@ fn transition_image_to_new_layout(device: &ash::Device, command_pool: &ash::vk::
   let fence = submit(&device, &queue, &command_buffer);
 
   // await for fence
-  let timeout_ms = 16;
+  let timeout_ms = 9999;
   let timeout_ns = timeout_ms * 1000 * 1000;
   unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
   unsafe { device.destroy_fence(fence, None); }
@@ -381,7 +381,7 @@ fn copy_image_to_surface_format(device: &ash::Device, command_pool: &ash::vk::Co
   let fence = submit(&device, &queue, &command_buffer);
 
   // await for fence
-  let timeout_ms = 16;
+  let timeout_ms = 9999;
   let timeout_ns = timeout_ms * 1000 * 1000;
   unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
   unsafe { device.destroy_fence(fence, None); }
@@ -433,7 +433,7 @@ fn copy_image_to_swapchain_image(device: &ash::Device, command_pool: &ash::vk::C
   let fence = submit(&device, &queue, &command_buffer);
 
   // await for fence
-  let timeout_ms = 16;
+  let timeout_ms = 9999;
   let timeout_ns = timeout_ms * 1000 * 1000;
   unsafe { device.wait_for_fences(&[fence], true, timeout_ns).expect("failed to wait for fence"); }
   unsafe { device.destroy_fence(fence, None); }
@@ -562,7 +562,7 @@ fn get_swapchain_images(swapchain_device: &ash::khr::swapchain::Device, swapchai
 }
 
 fn get_next_swapchain_image<'a>(device: &ash::Device, swapchain_device: &ash::khr::swapchain::Device, swapchain: &ash::vk::SwapchainKHR, swapchain_images: &'a Vec<ash::vk::Image>) -> (&'a ash::vk::Image, u32) {
-  let timeout = 16 * 1000 * 1000;
+  let timeout = 9999 * 1000 * 1000;
   let semaphore = ash::vk::Semaphore::null();
   let fence = unsafe { device.create_fence(&ash::vk::FenceCreateInfo::default(), None).expect("failed to create fence") };
   let (image_index, suboptimal) = unsafe { swapchain_device.acquire_next_image(*swapchain, timeout, semaphore, fence).expect("failed to acquire next image") };
