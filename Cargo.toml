@@ -13,4 +13,4 @@ raw-window-handle = "0.6.2"
 strum = "0.27.1"
 strum_macros = "0.27.1"
 winit = "0.29.15"
-proc_macros = { path = "../derive_macros/proc_macros" }
+proc_macros = { path = "proc_macros" }
