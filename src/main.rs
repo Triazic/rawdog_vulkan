@@ -124,6 +124,7 @@ fn main() {
   unsafe { device.destroy_command_pool(*command_pool, None); }
   unsafe { device.free_memory(memory_allocation, None); }
   unsafe { device.free_memory(memory_allocation_2, None); }
+  unsafe { device.destroy_image(raw_image, None); }
   unsafe { device.destroy_image(image, None); }
   unsafe { device.destroy_device(None); }
   unsafe { instance.destroy_instance(None); }
