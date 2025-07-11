@@ -5,8 +5,6 @@ pub mod utils;
 pub mod constants;
 pub mod gfx;
 pub mod create_gfx;
-pub mod gfx_traits;
-use crate::gfx_traits::*;
 pub mod memory;
 extern crate itertools;
 extern crate strum;
@@ -15,6 +13,7 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use utils::{cstr};
 use winit::{dpi::LogicalPosition, event::ElementState};
 use crate::{gfx::GFX, memory::{print_flags, split_flags, split_flags_u32}, utils::print_endianness};
+use gfx::*;
 
 fn main() {
   let gfx = create_gfx::create_gfx();

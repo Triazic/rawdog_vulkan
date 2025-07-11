@@ -1,9 +1,7 @@
 use derive_new::new;
-use crate::gfx_traits::*;
-use crate::gfx_traits::HasDevice;
-use proc_macros::{Getters};
+use proc_macros::{Getters, Has};
 
-#[derive(new, Getters)]
+#[derive(new, Getters, Has)]
 /// collection of vulkan stuff with an effectively 'static' lifetime
 pub struct GFX {
   // required for all contexts
